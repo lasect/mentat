@@ -67,11 +67,11 @@ func TestVerifyPasswordRejectsExcessiveParameters(t *testing.T) {
 }
 
 func TestNormalizeEmail(t *testing.T) {
-	got, err := NormalizeEmail("  Person+Tetra@Example.COM ")
+	got, err := NormalizeEmail("  Person+Mentat@Example.COM ")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "person+tetra@example.com" {
+	if got != "person+mentat@example.com" {
 		t.Fatalf("NormalizeEmail() = %q", got)
 	}
 	for _, invalid := range []string{"", "not-an-email", "Name <name@example.com>", "a @example.com"} {

@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	apimiddleware "tetra/internal/api/middleware"
-	coreauth "tetra/internal/auth"
-	"tetra/internal/config"
+	apimiddleware "mentat/internal/api/middleware"
+	coreauth "mentat/internal/auth"
+	"mentat/internal/config"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -27,13 +27,13 @@ import (
 )
 
 const (
-	refreshCookieName = "tetra_refresh"
-	intentCookieName  = "tetra_oauth_intent"
+	refreshCookieName = "mentat_refresh"
+	intentCookieName  = "mentat_oauth_intent"
 )
 
 type contextKey string
 
-const principalContextKey contextKey = "tetra-auth-principal"
+const principalContextKey contextKey = "mentat-auth-principal"
 
 type Principal struct {
 	User      coreauth.User

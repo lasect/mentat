@@ -17,7 +17,7 @@ func TestConnectionCipherRoundTripAndBinding(t *testing.T) {
 	organizationID := uuid.New()
 	databaseID := uuid.New()
 	aad := connectionAAD(organizationID, databaseID, 1)
-	ciphertext, nonce, version, err := cipher.Encrypt("postgres://tetra:secret@db.example/tetra", aad)
+	ciphertext, nonce, version, err := cipher.Encrypt("postgres://mentat:secret@db.example/mentat", aad)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,7 +25,7 @@ func TestConnectionCipherRoundTripAndBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plaintext != "postgres://tetra:secret@db.example/tetra" {
+	if plaintext != "postgres://mentat:secret@db.example/mentat" {
 		t.Fatalf("plaintext = %q", plaintext)
 	}
 	if _, err := cipher.Decrypt(ciphertext, nonce, connectionAAD(organizationID, uuid.New(), 1), version); err == nil {
@@ -37,11 +37,11 @@ func TestConnectionCipherRoundTripAndBinding(t *testing.T) {
 }
 
 func TestOrganizationInputNormalization(t *testing.T) {
-	slug, err := NormalizeSlug("  Tetra Cloud! ")
+	slug, err := NormalizeSlug("  Mentat Cloud! ")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if slug != "tetra-cloud" {
+	if slug != "mentat-cloud" {
 		t.Fatalf("slug = %q", slug)
 	}
 	if _, err := NormalizeSlug("---"); err == nil {

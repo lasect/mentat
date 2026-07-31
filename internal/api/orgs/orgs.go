@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"strings"
 
-	apiauth "tetra/internal/api/auth"
-	apimiddleware "tetra/internal/api/middleware"
-	coreorgs "tetra/internal/orgs"
+	apiauth "mentat/internal/api/auth"
+	apimiddleware "mentat/internal/api/middleware"
+	coreorgs "mentat/internal/orgs"
 
 	"github.com/go-chi/chi/v5"
 )

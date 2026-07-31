@@ -11,7 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"tetra/internal/appdb"
+	"mentat/internal/appdb"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -441,7 +441,7 @@ func lockOrganization(ctx context.Context, q *appdb.Queries, userID uuid.UUID, s
 }
 
 func connectionAAD(organizationID, databaseID uuid.UUID, keyVersion int16) []byte {
-	return []byte(fmt.Sprintf("tetra:db-connection:v%d:%s:%s", keyVersion, organizationID, databaseID))
+	return []byte(fmt.Sprintf("mentat:db-connection:v%d:%s:%s", keyVersion, organizationID, databaseID))
 }
 
 func publicDatabase(row appdb.Database, extensions []string) Database {

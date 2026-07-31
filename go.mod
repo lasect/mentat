@@ -1,4 +1,4 @@
-module tetra
+module mentat
 
 go 1.26.4
 

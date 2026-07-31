@@ -12,15 +12,15 @@ import (
 )
 
 func TestCORS(t *testing.T) {
-	handler := CORS([]string{"https://app.tetra.test"})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := CORS([]string{"https://app.mentat.test"})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
 	allowed := httptest.NewRequest(http.MethodGet, "/", nil)
-	allowed.Header.Set("Origin", "https://app.tetra.test")
+	allowed.Header.Set("Origin", "https://app.mentat.test")
 	allowedResponse := httptest.NewRecorder()
 	handler.ServeHTTP(allowedResponse, allowed)
-	if got := allowedResponse.Header().Get("Access-Control-Allow-Origin"); got != "https://app.tetra.test" {
+	if got := allowedResponse.Header().Get("Access-Control-Allow-Origin"); got != "https://app.mentat.test" {
 		t.Fatalf("allow origin = %q", got)
 	}
 	if got := allowedResponse.Header().Get("Access-Control-Allow-Credentials"); got != "true" {

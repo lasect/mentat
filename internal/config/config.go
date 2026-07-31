@@ -37,38 +37,38 @@ type API struct {
 
 func LoadAPI() (API, error) {
 	cfg := API{
-		Address:             envOr("TETRA_API_ADDRESS", ":8080"),
-		DatabaseURL:         os.Getenv("TETRA_DATABASE_URL"),
-		FrontendCallbackURL: envOr("TETRA_FRONTEND_AUTH_CALLBACK_URL", "http://localhost:5173/auth/callback"),
-		AllowedOrigins:      splitCSV(envOr("TETRA_ALLOWED_ORIGINS", "http://localhost:5173")),
-		TrustedProxyCIDRs:   splitCSV(os.Getenv("TETRA_TRUSTED_PROXY_CIDRS")),
-		JWTPrivateKey:       os.Getenv("TETRA_JWT_PRIVATE_KEY"),
-		JWTIssuer:           envOr("TETRA_JWT_ISSUER", "tetra-api"),
-		JWTAudience:         envOr("TETRA_JWT_AUDIENCE", "tetra"),
+		Address:             envOr("MENTAT_API_ADDRESS", ":8080"),
+		DatabaseURL:         os.Getenv("MENTAT_DATABASE_URL"),
+		FrontendCallbackURL: envOr("MENTAT_FRONTEND_AUTH_CALLBACK_URL", "http://localhost:5173/auth/callback"),
+		AllowedOrigins:      splitCSV(envOr("MENTAT_ALLOWED_ORIGINS", "http://localhost:5173")),
+		TrustedProxyCIDRs:   splitCSV(os.Getenv("MENTAT_TRUSTED_PROXY_CIDRS")),
+		JWTPrivateKey:       os.Getenv("MENTAT_JWT_PRIVATE_KEY"),
+		JWTIssuer:           envOr("MENTAT_JWT_ISSUER", "mentat-api"),
+		JWTAudience:         envOr("MENTAT_JWT_AUDIENCE", "mentat"),
 		AccessTTL:           15 * time.Minute,
 		RefreshTTL:          30 * 24 * time.Hour,
-		CookieDomain:        os.Getenv("TETRA_COOKIE_DOMAIN"),
-		GitHubClientID:      os.Getenv("TETRA_GITHUB_CLIENT_ID"),
-		GitHubClientSecret:  os.Getenv("TETRA_GITHUB_CLIENT_SECRET"),
-		GitHubCallbackURL:   envOr("TETRA_GITHUB_CALLBACK_URL", "http://localhost:8080/v1/auth/oauth/github/callback"),
-		GoogleClientID:      os.Getenv("TETRA_GOOGLE_CLIENT_ID"),
-		GoogleClientSecret:  os.Getenv("TETRA_GOOGLE_CLIENT_SECRET"),
-		GoogleCallbackURL:   envOr("TETRA_GOOGLE_CALLBACK_URL", "http://localhost:8080/v1/auth/oauth/google/callback"),
+		CookieDomain:        os.Getenv("MENTAT_COOKIE_DOMAIN"),
+		GitHubClientID:      os.Getenv("MENTAT_GITHUB_CLIENT_ID"),
+		GitHubClientSecret:  os.Getenv("MENTAT_GITHUB_CLIENT_SECRET"),
+		GitHubCallbackURL:   envOr("MENTAT_GITHUB_CALLBACK_URL", "http://localhost:8080/v1/auth/oauth/github/callback"),
+		GoogleClientID:      os.Getenv("MENTAT_GOOGLE_CLIENT_ID"),
+		GoogleClientSecret:  os.Getenv("MENTAT_GOOGLE_CLIENT_SECRET"),
+		GoogleCallbackURL:   envOr("MENTAT_GOOGLE_CALLBACK_URL", "http://localhost:8080/v1/auth/oauth/google/callback"),
 	}
 	var err error
-	cfg.CookieSecure, err = strconv.ParseBool(envOr("TETRA_COOKIE_SECURE", "true"))
+	cfg.CookieSecure, err = strconv.ParseBool(envOr("MENTAT_COOKIE_SECURE", "true"))
 	if err != nil {
-		return API{}, fmt.Errorf("TETRA_COOKIE_SECURE: %w", err)
+		return API{}, fmt.Errorf("MENTAT_COOKIE_SECURE: %w", err)
 	}
-	cfg.OAuthCookieAuthKey, err = decodeKey("TETRA_OAUTH_COOKIE_AUTH_KEY", 32)
-	if err != nil {
-		return API{}, err
-	}
-	cfg.OAuthCookieBlockKey, err = decodeKey("TETRA_OAUTH_COOKIE_BLOCK_KEY", 32)
+	cfg.OAuthCookieAuthKey, err = decodeKey("MENTAT_OAUTH_COOKIE_AUTH_KEY", 32)
 	if err != nil {
 		return API{}, err
 	}
-	cfg.ConnectionKey, err = decodeKey("TETRA_CONNECTION_ENCRYPTION_KEY", 32)
+	cfg.OAuthCookieBlockKey, err = decodeKey("MENTAT_OAUTH_COOKIE_BLOCK_KEY", 32)
+	if err != nil {
+		return API{}, err
+	}
+	cfg.ConnectionKey, err = decodeKey("MENTAT_CONNECTION_ENCRYPTION_KEY", 32)
 	if err != nil {
 		return API{}, err
 	}
@@ -81,12 +81,12 @@ func LoadAPI() (API, error) {
 		name  string
 		value string
 	}{
-		{"TETRA_DATABASE_URL", cfg.DatabaseURL},
-		{"TETRA_JWT_PRIVATE_KEY", cfg.JWTPrivateKey},
-		{"TETRA_GITHUB_CLIENT_ID", cfg.GitHubClientID},
-		{"TETRA_GITHUB_CLIENT_SECRET", cfg.GitHubClientSecret},
-		{"TETRA_GOOGLE_CLIENT_ID", cfg.GoogleClientID},
-		{"TETRA_GOOGLE_CLIENT_SECRET", cfg.GoogleClientSecret},
+		{"MENTAT_DATABASE_URL", cfg.DatabaseURL},
+		{"MENTAT_JWT_PRIVATE_KEY", cfg.JWTPrivateKey},
+		{"MENTAT_GITHUB_CLIENT_ID", cfg.GitHubClientID},
+		{"MENTAT_GITHUB_CLIENT_SECRET", cfg.GitHubClientSecret},
+		{"MENTAT_GOOGLE_CLIENT_ID", cfg.GoogleClientID},
+		{"MENTAT_GOOGLE_CLIENT_SECRET", cfg.GoogleClientSecret},
 	}
 	for _, item := range required {
 		if strings.TrimSpace(item.value) == "" {
@@ -94,7 +94,7 @@ func LoadAPI() (API, error) {
 		}
 	}
 	if len(cfg.AllowedOrigins) == 0 {
-		return API{}, fmt.Errorf("TETRA_ALLOWED_ORIGINS must contain at least one origin")
+		return API{}, fmt.Errorf("MENTAT_ALLOWED_ORIGINS must contain at least one origin")
 	}
 	for _, origin := range cfg.AllowedOrigins {
 		parsed, err := validateWebURL(origin)
@@ -116,7 +116,7 @@ func LoadAPI() (API, error) {
 			return API{}, err
 		}
 		if !cfg.CookieSecure && !isLoopbackHost(parsed.Hostname()) {
-			return API{}, fmt.Errorf("TETRA_COOKIE_SECURE may be false only for loopback callback URLs")
+			return API{}, fmt.Errorf("MENTAT_COOKIE_SECURE may be false only for loopback callback URLs")
 		}
 	}
 	return cfg, nil

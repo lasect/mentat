@@ -14,9 +14,9 @@ import (
 )
 
 func TestServiceCredentialAndSessionLifecycle(t *testing.T) {
-	databaseURL := os.Getenv("TETRA_TEST_DATABASE_URL")
+	databaseURL := os.Getenv("MENTAT_TEST_DATABASE_URL")
 	if databaseURL == "" {
-		t.Skip("TETRA_TEST_DATABASE_URL is not set")
+		t.Skip("MENTAT_TEST_DATABASE_URL is not set")
 	}
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, databaseURL)
@@ -45,7 +45,7 @@ func TestServiceCredentialAndSessionLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tokens, err := NewTokenManager(privateKey, "integration-test", "tetra-test", 15*time.Minute)
+	tokens, err := NewTokenManager(privateKey, "integration-test", "mentat-test", 15*time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -13,13 +13,13 @@ sqlc-vet:
 	$(GO) run github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION) vet
 
 migrate-up:
-	$(GO) run github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION) -dir $(APP_MIGRATIONS) postgres "$(TETRA_DATABASE_URL)" up
+	$(GO) run github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION) -dir $(APP_MIGRATIONS) postgres "$(MENTAT_DATABASE_URL)" up
 
 migrate-down:
-	$(GO) run github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION) -dir $(APP_MIGRATIONS) postgres "$(TETRA_DATABASE_URL)" down
+	$(GO) run github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION) -dir $(APP_MIGRATIONS) postgres "$(MENTAT_DATABASE_URL)" down
 
 migrate-status:
-	$(GO) run github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION) -dir $(APP_MIGRATIONS) postgres "$(TETRA_DATABASE_URL)" status
+	$(GO) run github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION) -dir $(APP_MIGRATIONS) postgres "$(MENTAT_DATABASE_URL)" status
 
 test:
 	$(GO) test ./...

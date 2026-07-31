@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	coreorgs "tetra/internal/orgs"
+	coreorgs "mentat/internal/orgs"
 )
 
 func TestDecodeJSON(t *testing.T) {

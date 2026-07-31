@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"tetra/internal/appdb"
+	"mentat/internal/appdb"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -16,9 +16,9 @@ import (
 )
 
 func TestOrganizationDatabaseLifecycle(t *testing.T) {
-	databaseURL := os.Getenv("TETRA_TEST_DATABASE_URL")
+	databaseURL := os.Getenv("MENTAT_TEST_DATABASE_URL")
 	if databaseURL == "" {
-		t.Skip("TETRA_TEST_DATABASE_URL is not set")
+		t.Skip("MENTAT_TEST_DATABASE_URL is not set")
 	}
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, databaseURL)
@@ -84,7 +84,7 @@ func TestOrganizationDatabaseLifecycle(t *testing.T) {
 
 	database, err := service.CreateDatabase(
 		ctx, ownerID, organization.Slug, "Production", "",
-		"postgres://tetra:secret@postgres.example:5432/production",
+		"postgres://mentat:secret@postgres.example:5432/production",
 		[]string{"pg_stat_statements", "pgstattuple"},
 	)
 	if err != nil {
@@ -97,7 +97,7 @@ func TestOrganizationDatabaseLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if connection != "postgres://tetra:secret@postgres.example:5432/production" {
+	if connection != "postgres://mentat:secret@postgres.example:5432/production" {
 		t.Fatalf("decrypted connection = %q", connection)
 	}
 	updated, err := service.SetDatabaseExtensions(
@@ -126,7 +126,7 @@ func TestOrganizationDatabaseLifecycle(t *testing.T) {
 	}
 	if _, err := service.CreateDatabase(
 		ctx, secondUserID, organization.Slug, "Forbidden", "",
-		"postgres://tetra:secret@postgres.example/forbidden", nil,
+		"postgres://mentat:secret@postgres.example/forbidden", nil,
 	); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("member database creation error = %v", err)
 	}

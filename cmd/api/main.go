@@ -10,12 +10,12 @@ import (
 	"syscall"
 	"time"
 
-	apiauth "tetra/internal/api/auth"
-	apimiddleware "tetra/internal/api/middleware"
-	apiorgs "tetra/internal/api/orgs"
-	coreauth "tetra/internal/auth"
-	"tetra/internal/config"
-	coreorgs "tetra/internal/orgs"
+	apiauth "mentat/internal/api/auth"
+	apimiddleware "mentat/internal/api/middleware"
+	apiorgs "mentat/internal/api/orgs"
+	coreauth "mentat/internal/auth"
+	"mentat/internal/config"
+	coreorgs "mentat/internal/orgs"
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -24,7 +24,7 @@ import (
 
 func main() {
 	if err := run(); err != nil {
-		slog.Error("tetra-api stopped", "error", err)
+		slog.Error("mentat-api stopped", "error", err)
 		os.Exit(1)
 	}
 }
@@ -105,7 +105,7 @@ func run() error {
 	}
 	errs := make(chan error, 1)
 	go func() {
-		slog.Info("tetra-api listening", "address", cfg.Address)
+		slog.Info("mentat-api listening", "address", cfg.Address)
 		errs <- server.ListenAndServe()
 	}()
 

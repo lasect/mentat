@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	coreauth "tetra/internal/auth"
+	coreauth "mentat/internal/auth"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
