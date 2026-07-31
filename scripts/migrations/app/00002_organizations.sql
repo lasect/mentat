@@ -68,7 +68,7 @@ CREATE TABLE database_extensions (
             'pg_stat_monitor',
             'pgstattuple',
             'pg_buffercache',
-            'pg_nygma'
+            'pg_mentat'
         )
     )
 );

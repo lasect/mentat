@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "pg_nygma"
+name = "pg_mentat"
 version = "0.1.0"

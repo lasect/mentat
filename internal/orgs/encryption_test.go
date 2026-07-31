@@ -65,11 +65,11 @@ func TestOrganizationInputNormalization(t *testing.T) {
 }
 
 func TestNormalizeExtensions(t *testing.T) {
-	extensions, err := NormalizeExtensions([]string{"pg_stat_statements", " PG_NYGMA ", "pg_stat_statements"})
+	extensions, err := NormalizeExtensions([]string{"pg_stat_statements", " PG_MENTAT ", "pg_stat_statements"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(extensions) != 2 || extensions[0] != "pg_nygma" || extensions[1] != "pg_stat_statements" {
+	if len(extensions) != 2 || extensions[0] != "pg_mentat" || extensions[1] != "pg_stat_statements" {
 		t.Fatalf("extensions = %#v", extensions)
 	}
 	if _, err := NormalizeExtensions([]string{"postgis"}); err == nil {

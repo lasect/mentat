@@ -29,7 +29,7 @@ var supportedExtensions = map[string]struct{}{
 	"pg_stat_monitor":    {},
 	"pgstattuple":        {},
 	"pg_buffercache":     {},
-	"pg_nygma":           {},
+	"pg_mentat":          {},
 }
 
 type Organization struct {

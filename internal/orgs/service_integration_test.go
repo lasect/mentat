@@ -102,12 +102,12 @@ func TestOrganizationDatabaseLifecycle(t *testing.T) {
 	}
 	updated, err := service.SetDatabaseExtensions(
 		ctx, ownerID, organization.Slug, database.Slug,
-		[]string{"pg_stat_monitor", "pg_nygma"},
+		[]string{"pg_stat_monitor", "pg_mentat"},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(updated.Extensions) != 2 || updated.Extensions[0] != "pg_nygma" || updated.Extensions[1] != "pg_stat_monitor" {
+	if len(updated.Extensions) != 2 || updated.Extensions[0] != "pg_mentat" || updated.Extensions[1] != "pg_stat_monitor" {
 		t.Fatalf("updated extensions = %#v", updated.Extensions)
 	}
 	databases, err := service.ListDatabases(ctx, ownerID, organization.Slug)
