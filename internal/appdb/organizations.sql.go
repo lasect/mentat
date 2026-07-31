@@ -283,24 +283,29 @@ func (q *Queries) GetOrganizationBySlugForUser(ctx context.Context, arg GetOrgan
 }
 
 const listDatabaseExtensions = `-- name: ListDatabaseExtensions :many
-SELECT extension FROM database_extensions
+SELECT extension, interval_seconds FROM database_extensions
 WHERE database_id = $1
 ORDER BY extension
 `
 
-func (q *Queries) ListDatabaseExtensions(ctx context.Context, databaseID uuid.UUID) ([]string, error) {
+type ListDatabaseExtensionsRow struct {
+	Extension       string `json:"extension"`
+	IntervalSeconds int32  `json:"interval_seconds"`
+}
+
+func (q *Queries) ListDatabaseExtensions(ctx context.Context, databaseID uuid.UUID) ([]ListDatabaseExtensionsRow, error) {
 	rows, err := q.db.Query(ctx, listDatabaseExtensions, databaseID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []string{}
+	items := []ListDatabaseExtensionsRow{}
 	for rows.Next() {
-		var extension string
-		if err := rows.Scan(&extension); err != nil {
+		var i ListDatabaseExtensionsRow
+		if err := rows.Scan(&i.Extension, &i.IntervalSeconds); err != nil {
 			return nil, err
 		}
-		items = append(items, extension)
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -435,20 +440,28 @@ func (q *Queries) LockOrganizationBySlugForUser(ctx context.Context, arg LockOrg
 }
 
 const selectDatabaseExtension = `-- name: SelectDatabaseExtension :exec
-INSERT INTO database_extensions (database_id, extension, selected_by)
-VALUES ($1, $2, $3)
+INSERT INTO database_extensions (database_id, extension, interval_seconds, selected_by)
+VALUES ($1, $2, $3, $4)
 ON CONFLICT (database_id, extension) DO UPDATE
-SET selected_by = EXCLUDED.selected_by, selected_at = now()
+SET interval_seconds = EXCLUDED.interval_seconds,
+    selected_by = EXCLUDED.selected_by,
+    selected_at = now()
 `
 
 type SelectDatabaseExtensionParams struct {
-	DatabaseID uuid.UUID `json:"database_id"`
-	Extension  string    `json:"extension"`
-	SelectedBy uuid.UUID `json:"selected_by"`
+	DatabaseID      uuid.UUID `json:"database_id"`
+	Extension       string    `json:"extension"`
+	IntervalSeconds int32     `json:"interval_seconds"`
+	SelectedBy      uuid.UUID `json:"selected_by"`
 }
 
 func (q *Queries) SelectDatabaseExtension(ctx context.Context, arg SelectDatabaseExtensionParams) error {
-	_, err := q.db.Exec(ctx, selectDatabaseExtension, arg.DatabaseID, arg.Extension, arg.SelectedBy)
+	_, err := q.db.Exec(ctx, selectDatabaseExtension,
+		arg.DatabaseID,
+		arg.Extension,
+		arg.IntervalSeconds,
+		arg.SelectedBy,
+	)
 	return err
 }
 

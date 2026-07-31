@@ -7,11 +7,6 @@ import (
 	"fmt"
 )
 
-type ConnectionCipher struct {
-	aead       cipher.AEAD
-	keyVersion int16
-}
-
 func NewConnectionCipher(key []byte, keyVersion int16) (*ConnectionCipher, error) {
 	if len(key) != 32 {
 		return nil, fmt.Errorf("connection encryption key must be 32 bytes")

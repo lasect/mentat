@@ -85,7 +85,7 @@ func TestOrganizationDatabaseLifecycle(t *testing.T) {
 	database, err := service.CreateDatabase(
 		ctx, ownerID, organization.Slug, "Production", "",
 		"postgres://mentat:secret@postgres.example:5432/production",
-		[]string{"pg_stat_statements", "pgstattuple"},
+		map[string]int{"pg_stat_statements": 60, "pgstattuple": 3600},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -102,12 +102,12 @@ func TestOrganizationDatabaseLifecycle(t *testing.T) {
 	}
 	updated, err := service.SetDatabaseExtensions(
 		ctx, ownerID, organization.Slug, database.Slug,
-		[]string{"pg_stat_monitor", "pg_mentat"},
+		map[string]int{"pg_stat_monitor": 60, "pg_mentat": 300},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(updated.Extensions) != 2 || updated.Extensions[0] != "pg_mentat" || updated.Extensions[1] != "pg_stat_monitor" {
+	if len(updated.Extensions) != 2 || updated.Extensions["pg_mentat"] != 300 || updated.Extensions["pg_stat_monitor"] != 60 {
 		t.Fatalf("updated extensions = %#v", updated.Extensions)
 	}
 	databases, err := service.ListDatabases(ctx, ownerID, organization.Slug)

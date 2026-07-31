@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
-	"sort"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"mentat/internal/appdb"
@@ -24,36 +22,17 @@ var (
 	slugValid      = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$`)
 )
 
-var supportedExtensions = map[string]struct{}{
-	"pg_stat_statements": {},
-	"pg_stat_monitor":    {},
-	"pgstattuple":        {},
-	"pg_buffercache":     {},
-	"pg_mentat":          {},
+type supportedExtensionConfig struct {
+	minInterval int
+	maxInterval int
 }
 
-type Organization struct {
-	ID             uuid.UUID `json:"id"`
-	Name           string    `json:"name"`
-	Slug           string    `json:"slug"`
-	Plan           string    `json:"plan"`
-	AnalyticsStore string    `json:"analytics_store"`
-	Role           string    `json:"role"`
-}
-
-type Database struct {
-	ID             uuid.UUID `json:"id"`
-	OrganizationID uuid.UUID `json:"organization_id"`
-	Name           string    `json:"name"`
-	Slug           string    `json:"slug"`
-	Extensions     []string  `json:"extensions"`
-	CreatedAt      time.Time `json:"created_at"`
-}
-
-type Service struct {
-	pool    *pgxpool.Pool
-	queries *appdb.Queries
-	cipher  *ConnectionCipher
+var supportedExtensions = map[string]supportedExtensionConfig{
+	"pg_stat_statements": {minInterval: 5, maxInterval: 86400},
+	"pg_stat_monitor":    {minInterval: 5, maxInterval: 86400},
+	"pgstattuple":        {minInterval: 5, maxInterval: 86400},
+	"pg_buffercache":     {minInterval: 5, maxInterval: 86400},
+	"pg_mentat":          {minInterval: 5, maxInterval: 86400},
 }
 
 func NewService(pool *pgxpool.Pool, cipher *ConnectionCipher) (*Service, error) {
@@ -173,7 +152,7 @@ func (s *Service) UpdateAnalyticsStore(ctx context.Context, userID uuid.UUID, sl
 	return organization, nil
 }
 
-func (s *Service) CreateDatabase(ctx context.Context, userID uuid.UUID, orgSlug, name, requestedSlug, connectionString string, extensions []string) (Database, error) {
+func (s *Service) CreateDatabase(ctx context.Context, userID uuid.UUID, orgSlug, name, requestedSlug, connectionString string, extensions map[string]int) (Database, error) {
 	name = strings.TrimSpace(name)
 	if name == "" || utf8.RuneCountInString(name) > 120 {
 		return Database{}, fmt.Errorf("%w: database name must be between 1 and 120 characters", ErrInvalidInput)
@@ -223,9 +202,10 @@ func (s *Service) CreateDatabase(ctx context.Context, userID uuid.UUID, orgSlug,
 	if err != nil {
 		return Database{}, fmt.Errorf("create database: %w", err)
 	}
-	for _, extension := range extensions {
+	for extension, interval := range extensions {
 		if err := q.SelectDatabaseExtension(ctx, appdb.SelectDatabaseExtensionParams{
-			DatabaseID: row.ID, Extension: extension, SelectedBy: userID,
+			DatabaseID: row.ID, Extension: extension,
+			IntervalSeconds: int32(interval), SelectedBy: userID,
 		}); err != nil {
 			return Database{}, fmt.Errorf("select database extension: %w", err)
 		}
@@ -251,12 +231,12 @@ func (s *Service) ListDatabases(ctx context.Context, userID uuid.UUID, orgSlug s
 		if err != nil {
 			return nil, fmt.Errorf("list database extensions: %w", err)
 		}
-		result = append(result, publicDatabase(row, extensions))
+		result = append(result, publicDatabase(row, extensionMap(extensions)))
 	}
 	return result, nil
 }
 
-func (s *Service) SetDatabaseExtensions(ctx context.Context, userID uuid.UUID, orgSlug, databaseSlug string, requested []string) (Database, error) {
+func (s *Service) SetDatabaseExtensions(ctx context.Context, userID uuid.UUID, orgSlug, databaseSlug string, requested map[string]int) (Database, error) {
 	extensions, err := NormalizeExtensions(requested)
 	if err != nil {
 		return Database{}, err
@@ -288,18 +268,19 @@ func (s *Service) SetDatabaseExtensions(ctx context.Context, userID uuid.UUID, o
 		return Database{}, fmt.Errorf("list current extensions: %w", err)
 	}
 	wanted := make(map[string]struct{}, len(extensions))
-	for _, extension := range extensions {
+	for extension, interval := range extensions {
 		wanted[extension] = struct{}{}
 		if err := q.SelectDatabaseExtension(ctx, appdb.SelectDatabaseExtensionParams{
-			DatabaseID: database.ID, Extension: extension, SelectedBy: userID,
+			DatabaseID: database.ID, Extension: extension,
+			IntervalSeconds: int32(interval), SelectedBy: userID,
 		}); err != nil {
 			return Database{}, fmt.Errorf("select extension: %w", err)
 		}
 	}
 	for _, extension := range existing {
-		if _, ok := wanted[extension]; !ok {
+		if _, ok := wanted[extension.Extension]; !ok {
 			if _, err := q.DeselectDatabaseExtension(ctx, appdb.DeselectDatabaseExtensionParams{
-				DatabaseID: database.ID, Extension: extension,
+				DatabaseID: database.ID, Extension: extension.Extension,
 			}); err != nil {
 				return Database{}, fmt.Errorf("deselect extension: %w", err)
 			}
@@ -402,21 +383,19 @@ func ValidateConnectionString(value string) (string, error) {
 	return value, nil
 }
 
-func NormalizeExtensions(values []string) ([]string, error) {
-	seen := make(map[string]struct{}, len(values))
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.ToLower(strings.TrimSpace(value))
-		if _, ok := supportedExtensions[value]; !ok {
-			return nil, fmt.Errorf("%w: %s", ErrInvalidExtension, value)
+func NormalizeExtensions(values map[string]int) (map[string]int, error) {
+	result := make(map[string]int, len(values))
+	for extension, interval := range values {
+		extension = strings.ToLower(strings.TrimSpace(extension))
+		config, supported := supportedExtensions[extension]
+		if !supported {
+			return nil, fmt.Errorf("%w: %s", ErrInvalidExtension, extension)
 		}
-		if _, ok := seen[value]; ok {
-			continue
+		if interval < config.minInterval || interval > config.maxInterval {
+			return nil, fmt.Errorf("%w: interval for %s must be between %d and %d", ErrInvalidInput, extension, config.minInterval, config.maxInterval)
 		}
-		seen[value] = struct{}{}
-		result = append(result, value)
+		result[extension] = interval
 	}
-	sort.Strings(result)
 	return result, nil
 }
 
@@ -444,7 +423,15 @@ func connectionAAD(organizationID, databaseID uuid.UUID, keyVersion int16) []byt
 	return []byte(fmt.Sprintf("mentat:db-connection:v%d:%s:%s", keyVersion, organizationID, databaseID))
 }
 
-func publicDatabase(row appdb.Database, extensions []string) Database {
+func extensionMap(rows []appdb.ListDatabaseExtensionsRow) map[string]int {
+	extensions := make(map[string]int, len(rows))
+	for _, row := range rows {
+		extensions[row.Extension] = int(row.IntervalSeconds)
+	}
+	return extensions
+}
+
+func publicDatabase(row appdb.Database, extensions map[string]int) Database {
 	return Database{
 		ID: row.ID, OrganizationID: row.OrganizationID, Name: row.Name, Slug: row.Slug,
 		Extensions: extensions, CreatedAt: row.CreatedAt.Time,

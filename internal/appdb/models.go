@@ -23,10 +23,11 @@ type Database struct {
 }
 
 type DatabaseExtension struct {
-	DatabaseID uuid.UUID          `json:"database_id"`
-	Extension  string             `json:"extension"`
-	SelectedBy uuid.UUID          `json:"selected_by"`
-	SelectedAt pgtype.Timestamptz `json:"selected_at"`
+	DatabaseID      uuid.UUID          `json:"database_id"`
+	Extension       string             `json:"extension"`
+	SelectedBy      uuid.UUID          `json:"selected_by"`
+	SelectedAt      pgtype.Timestamptz `json:"selected_at"`
+	IntervalSeconds int32              `json:"interval_seconds"`
 }
 
 type OauthIdentity struct {

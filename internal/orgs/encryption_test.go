@@ -65,14 +65,17 @@ func TestOrganizationInputNormalization(t *testing.T) {
 }
 
 func TestNormalizeExtensions(t *testing.T) {
-	extensions, err := NormalizeExtensions([]string{"pg_stat_statements", " PG_MENTAT ", "pg_stat_statements"})
+	extensions, err := NormalizeExtensions(map[string]int{"pg_stat_statements": 60, " PG_MENTAT ": 300})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(extensions) != 2 || extensions[0] != "pg_mentat" || extensions[1] != "pg_stat_statements" {
+	if len(extensions) != 2 || extensions["pg_mentat"] != 300 || extensions["pg_stat_statements"] != 60 {
 		t.Fatalf("extensions = %#v", extensions)
 	}
-	if _, err := NormalizeExtensions([]string{"postgis"}); err == nil {
+	if _, err := NormalizeExtensions(map[string]int{"postgis": 60}); err == nil {
 		t.Fatal("unsupported extension succeeded")
+	}
+	if _, err := NormalizeExtensions(map[string]int{"pgstattuple": 4}); err == nil {
+		t.Fatal("out-of-range interval succeeded")
 	}
 }

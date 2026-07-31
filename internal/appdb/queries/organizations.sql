@@ -68,16 +68,18 @@ DELETE FROM databases
 WHERE id = $1 AND organization_id = $2;
 
 -- name: SelectDatabaseExtension :exec
-INSERT INTO database_extensions (database_id, extension, selected_by)
-VALUES ($1, $2, $3)
+INSERT INTO database_extensions (database_id, extension, interval_seconds, selected_by)
+VALUES ($1, $2, $3, $4)
 ON CONFLICT (database_id, extension) DO UPDATE
-SET selected_by = EXCLUDED.selected_by, selected_at = now();
+SET interval_seconds = EXCLUDED.interval_seconds,
+    selected_by = EXCLUDED.selected_by,
+    selected_at = now();
 
 -- name: DeselectDatabaseExtension :execrows
 DELETE FROM database_extensions
 WHERE database_id = $1 AND extension = $2;
 
 -- name: ListDatabaseExtensions :many
-SELECT extension FROM database_extensions
+SELECT extension, interval_seconds FROM database_extensions
 WHERE database_id = $1
 ORDER BY extension;
