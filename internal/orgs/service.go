@@ -35,6 +35,12 @@ var supportedExtensions = map[string]supportedExtensionConfig{
 	"pg_mentat":          {minInterval: 5, maxInterval: 86400},
 }
 
+type Service struct {
+	pool    *pgxpool.Pool
+	queries *appdb.Queries
+	cipher  *ConnectionCipher
+}
+
 func NewService(pool *pgxpool.Pool, cipher *ConnectionCipher) (*Service, error) {
 	if pool == nil || cipher == nil {
 		return nil, fmt.Errorf("database and connection cipher are required")

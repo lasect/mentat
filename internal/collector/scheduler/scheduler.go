@@ -1,12 +1,14 @@
 package scheduler
 
 import (
-	"crypto/cipher"
+	"container/heap"
+	"context"
+	"fmt"
 	"mentat/internal/appdb"
+	"mentat/internal/collector/queue"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type extensionGroup struct {
@@ -21,13 +23,34 @@ type groupKey struct {
 }
 
 type Scheduler struct {
-	pool    *pgxpool.Pool
-	queries *appdb.Queries
-	cipher  *ConnectionCipher
+	queries  *appdb.Queries
+	schedule scheduleHeap
+	queue    *queue.Queue
 }
-type ConnectionCipher struct {
-	aead       cipher.AEAD
-	keyVersion int16
+
+func NewScheduler(queue *queue.Queue, queries *appdb.Queries) *Scheduler {
+	return &Scheduler{
+		queue:    queue,
+		queries:  queries,
+		schedule: make(scheduleHeap, 0),
+	}
+}
+
+func (s *Scheduler) InitializeSchedule(ctx context.Context) error {
+	row, err := s.queries.ListActiveExtensionsForCollector(ctx)
+	if err != nil {
+		return fmt.Errorf("list active extensions: %w", err)
+	}
+
+	groups := groupExtensions(row)
+	s.schedule = make(scheduleHeap, 0, len(groups))
+
+	for _, group := range groups {
+		heap.Push(&s.schedule, group)
+	}
+	heap.Init(&s.schedule)
+
+	return nil
 }
 
 func groupExtensions(rows []appdb.ListActiveExtensionsForCollectorRow) []extensionGroup {
