@@ -65,17 +65,20 @@ func TestOrganizationInputNormalization(t *testing.T) {
 }
 
 func TestNormalizeExtensions(t *testing.T) {
-	extensions, err := NormalizeExtensions(map[string]int{"pg_stat_statements": 60, " PG_MENTAT ": 300})
+	extensions, err := NormalizeExtensions(map[string]DatabaseExtension{
+		"pg_stat_statements": {IntervalSeconds: 60, IsActive: true},
+		" PG_MENTAT ":        {IntervalSeconds: 300, IsActive: false},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(extensions) != 2 || extensions["pg_mentat"] != 300 || extensions["pg_stat_statements"] != 60 {
+	if len(extensions) != 2 || extensions["pg_mentat"].IntervalSeconds != 300 || extensions["pg_mentat"].IsActive || !extensions["pg_stat_statements"].IsActive {
 		t.Fatalf("extensions = %#v", extensions)
 	}
-	if _, err := NormalizeExtensions(map[string]int{"postgis": 60}); err == nil {
+	if _, err := NormalizeExtensions(map[string]DatabaseExtension{"postgis": {IntervalSeconds: 60}}); err == nil {
 		t.Fatal("unsupported extension succeeded")
 	}
-	if _, err := NormalizeExtensions(map[string]int{"pgstattuple": 4}); err == nil {
+	if _, err := NormalizeExtensions(map[string]DatabaseExtension{"pgstattuple": {IntervalSeconds: 4}}); err == nil {
 		t.Fatal("out-of-range interval succeeded")
 	}
 }

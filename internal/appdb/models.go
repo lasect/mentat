@@ -28,8 +28,9 @@ type DatabaseExtension struct {
 	SelectedBy      uuid.UUID          `json:"selected_by"`
 	SelectedAt      pgtype.Timestamptz `json:"selected_at"`
 	IntervalSeconds int32              `json:"interval_seconds"`
-	LastInterval    pgtype.Timestamptz `json:"last_interval"`
-	NextInterval    pgtype.Timestamptz `json:"next_interval"`
+	LastCollectedAt pgtype.Timestamptz `json:"last_collected_at"`
+	NextRunAt       pgtype.Timestamptz `json:"next_run_at"`
+	IsActive        bool               `json:"is_active"`
 }
 
 type OauthIdentity struct {

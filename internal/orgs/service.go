@@ -152,7 +152,7 @@ func (s *Service) UpdateAnalyticsStore(ctx context.Context, userID uuid.UUID, sl
 	return organization, nil
 }
 
-func (s *Service) CreateDatabase(ctx context.Context, userID uuid.UUID, orgSlug, name, requestedSlug, connectionString string, extensions map[string]int) (Database, error) {
+func (s *Service) CreateDatabase(ctx context.Context, userID uuid.UUID, orgSlug, name, requestedSlug, connectionString string, extensions map[string]DatabaseExtension) (Database, error) {
 	name = strings.TrimSpace(name)
 	if name == "" || utf8.RuneCountInString(name) > 120 {
 		return Database{}, fmt.Errorf("%w: database name must be between 1 and 120 characters", ErrInvalidInput)
@@ -202,10 +202,10 @@ func (s *Service) CreateDatabase(ctx context.Context, userID uuid.UUID, orgSlug,
 	if err != nil {
 		return Database{}, fmt.Errorf("create database: %w", err)
 	}
-	for extension, interval := range extensions {
+	for extension, config := range extensions {
 		if err := q.SelectDatabaseExtension(ctx, appdb.SelectDatabaseExtensionParams{
 			DatabaseID: row.ID, Extension: extension,
-			IntervalSeconds: int32(interval), SelectedBy: userID,
+			IntervalSeconds: int32(config.IntervalSeconds), IsActive: config.IsActive, SelectedBy: userID,
 		}); err != nil {
 			return Database{}, fmt.Errorf("select database extension: %w", err)
 		}
@@ -236,7 +236,7 @@ func (s *Service) ListDatabases(ctx context.Context, userID uuid.UUID, orgSlug s
 	return result, nil
 }
 
-func (s *Service) SetDatabaseExtensions(ctx context.Context, userID uuid.UUID, orgSlug, databaseSlug string, requested map[string]int) (Database, error) {
+func (s *Service) SetDatabaseExtensions(ctx context.Context, userID uuid.UUID, orgSlug, databaseSlug string, requested map[string]DatabaseExtension) (Database, error) {
 	extensions, err := NormalizeExtensions(requested)
 	if err != nil {
 		return Database{}, err
@@ -268,11 +268,11 @@ func (s *Service) SetDatabaseExtensions(ctx context.Context, userID uuid.UUID, o
 		return Database{}, fmt.Errorf("list current extensions: %w", err)
 	}
 	wanted := make(map[string]struct{}, len(extensions))
-	for extension, interval := range extensions {
+	for extension, config := range extensions {
 		wanted[extension] = struct{}{}
 		if err := q.SelectDatabaseExtension(ctx, appdb.SelectDatabaseExtensionParams{
 			DatabaseID: database.ID, Extension: extension,
-			IntervalSeconds: int32(interval), SelectedBy: userID,
+			IntervalSeconds: int32(config.IntervalSeconds), IsActive: config.IsActive, SelectedBy: userID,
 		}); err != nil {
 			return Database{}, fmt.Errorf("select extension: %w", err)
 		}
@@ -383,18 +383,18 @@ func ValidateConnectionString(value string) (string, error) {
 	return value, nil
 }
 
-func NormalizeExtensions(values map[string]int) (map[string]int, error) {
-	result := make(map[string]int, len(values))
-	for extension, interval := range values {
+func NormalizeExtensions(values map[string]DatabaseExtension) (map[string]DatabaseExtension, error) {
+	result := make(map[string]DatabaseExtension, len(values))
+	for extension, value := range values {
 		extension = strings.ToLower(strings.TrimSpace(extension))
 		config, supported := supportedExtensions[extension]
 		if !supported {
 			return nil, fmt.Errorf("%w: %s", ErrInvalidExtension, extension)
 		}
-		if interval < config.minInterval || interval > config.maxInterval {
+		if value.IntervalSeconds < config.minInterval || value.IntervalSeconds > config.maxInterval {
 			return nil, fmt.Errorf("%w: interval for %s must be between %d and %d", ErrInvalidInput, extension, config.minInterval, config.maxInterval)
 		}
-		result[extension] = interval
+		result[extension] = value
 	}
 	return result, nil
 }
@@ -423,15 +423,15 @@ func connectionAAD(organizationID, databaseID uuid.UUID, keyVersion int16) []byt
 	return []byte(fmt.Sprintf("mentat:db-connection:v%d:%s:%s", keyVersion, organizationID, databaseID))
 }
 
-func extensionMap(rows []appdb.ListDatabaseExtensionsRow) map[string]int {
-	extensions := make(map[string]int, len(rows))
+func extensionMap(rows []appdb.ListDatabaseExtensionsRow) map[string]DatabaseExtension {
+	extensions := make(map[string]DatabaseExtension, len(rows))
 	for _, row := range rows {
-		extensions[row.Extension] = int(row.IntervalSeconds)
+		extensions[row.Extension] = DatabaseExtension{IntervalSeconds: int(row.IntervalSeconds), IsActive: row.IsActive}
 	}
 	return extensions
 }
 
-func publicDatabase(row appdb.Database, extensions map[string]int) Database {
+func publicDatabase(row appdb.Database, extensions map[string]DatabaseExtension) Database {
 	return Database{
 		ID: row.ID, OrganizationID: row.OrganizationID, Name: row.Name, Slug: row.Slug,
 		Extensions: extensions, CreatedAt: row.CreatedAt.Time,

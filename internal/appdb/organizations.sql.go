@@ -282,8 +282,89 @@ func (q *Queries) GetOrganizationBySlugForUser(ctx context.Context, arg GetOrgan
 	return i, err
 }
 
+const listActiveExtensionsForCollector = `-- name: ListActiveExtensionsForCollector :many
+SELECT database_id, extension, interval_seconds, last_collected_at, next_run_at FROM database_extensions
+WHERE is_active = true
+ORDER BY database_id, interval_seconds, next_run_at, extension
+`
+
+type ListActiveExtensionsForCollectorRow struct {
+	DatabaseID      uuid.UUID          `json:"database_id"`
+	Extension       string             `json:"extension"`
+	IntervalSeconds int32              `json:"interval_seconds"`
+	LastCollectedAt pgtype.Timestamptz `json:"last_collected_at"`
+	NextRunAt       pgtype.Timestamptz `json:"next_run_at"`
+}
+
+func (q *Queries) ListActiveExtensionsForCollector(ctx context.Context) ([]ListActiveExtensionsForCollectorRow, error) {
+	rows, err := q.db.Query(ctx, listActiveExtensionsForCollector)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveExtensionsForCollectorRow{}
+	for rows.Next() {
+		var i ListActiveExtensionsForCollectorRow
+		if err := rows.Scan(
+			&i.DatabaseID,
+			&i.Extension,
+			&i.IntervalSeconds,
+			&i.LastCollectedAt,
+			&i.NextRunAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listActiveExtensionsForDatabase = `-- name: ListActiveExtensionsForDatabase :many
+SELECT database_id, extension, interval_seconds, last_collected_at, next_run_at FROM database_extensions
+WHERE is_active = true
+AND database_id = $1
+ORDER BY interval_seconds, next_run_at, extension
+`
+
+type ListActiveExtensionsForDatabaseRow struct {
+	DatabaseID      uuid.UUID          `json:"database_id"`
+	Extension       string             `json:"extension"`
+	IntervalSeconds int32              `json:"interval_seconds"`
+	LastCollectedAt pgtype.Timestamptz `json:"last_collected_at"`
+	NextRunAt       pgtype.Timestamptz `json:"next_run_at"`
+}
+
+func (q *Queries) ListActiveExtensionsForDatabase(ctx context.Context, databaseID uuid.UUID) ([]ListActiveExtensionsForDatabaseRow, error) {
+	rows, err := q.db.Query(ctx, listActiveExtensionsForDatabase, databaseID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveExtensionsForDatabaseRow{}
+	for rows.Next() {
+		var i ListActiveExtensionsForDatabaseRow
+		if err := rows.Scan(
+			&i.DatabaseID,
+			&i.Extension,
+			&i.IntervalSeconds,
+			&i.LastCollectedAt,
+			&i.NextRunAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDatabaseExtensions = `-- name: ListDatabaseExtensions :many
-SELECT extension, interval_seconds FROM database_extensions
+SELECT extension, interval_seconds, is_active FROM database_extensions
 WHERE database_id = $1
 ORDER BY extension
 `
@@ -291,6 +372,7 @@ ORDER BY extension
 type ListDatabaseExtensionsRow struct {
 	Extension       string `json:"extension"`
 	IntervalSeconds int32  `json:"interval_seconds"`
+	IsActive        bool   `json:"is_active"`
 }
 
 func (q *Queries) ListDatabaseExtensions(ctx context.Context, databaseID uuid.UUID) ([]ListDatabaseExtensionsRow, error) {
@@ -302,7 +384,7 @@ func (q *Queries) ListDatabaseExtensions(ctx context.Context, databaseID uuid.UU
 	items := []ListDatabaseExtensionsRow{}
 	for rows.Next() {
 		var i ListDatabaseExtensionsRow
-		if err := rows.Scan(&i.Extension, &i.IntervalSeconds); err != nil {
+		if err := rows.Scan(&i.Extension, &i.IntervalSeconds, &i.IsActive); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -440,10 +522,11 @@ func (q *Queries) LockOrganizationBySlugForUser(ctx context.Context, arg LockOrg
 }
 
 const selectDatabaseExtension = `-- name: SelectDatabaseExtension :exec
-INSERT INTO database_extensions (database_id, extension, interval_seconds, selected_by)
-VALUES ($1, $2, $3, $4)
+INSERT INTO database_extensions (database_id, extension, interval_seconds, is_active, selected_by)
+VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (database_id, extension) DO UPDATE
 SET interval_seconds = EXCLUDED.interval_seconds,
+    is_active = EXCLUDED.is_active,
     selected_by = EXCLUDED.selected_by,
     selected_at = now()
 `
@@ -452,6 +535,7 @@ type SelectDatabaseExtensionParams struct {
 	DatabaseID      uuid.UUID `json:"database_id"`
 	Extension       string    `json:"extension"`
 	IntervalSeconds int32     `json:"interval_seconds"`
+	IsActive        bool      `json:"is_active"`
 	SelectedBy      uuid.UUID `json:"selected_by"`
 }
 
@@ -460,6 +544,7 @@ func (q *Queries) SelectDatabaseExtension(ctx context.Context, arg SelectDatabas
 		arg.DatabaseID,
 		arg.Extension,
 		arg.IntervalSeconds,
+		arg.IsActive,
 		arg.SelectedBy,
 	)
 	return err

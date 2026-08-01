@@ -85,7 +85,10 @@ func TestOrganizationDatabaseLifecycle(t *testing.T) {
 	database, err := service.CreateDatabase(
 		ctx, ownerID, organization.Slug, "Production", "",
 		"postgres://mentat:secret@postgres.example:5432/production",
-		map[string]int{"pg_stat_statements": 60, "pgstattuple": 3600},
+		map[string]DatabaseExtension{
+			"pg_stat_statements": {IntervalSeconds: 60, IsActive: true},
+			"pgstattuple":        {IntervalSeconds: 3600, IsActive: true},
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -102,12 +105,15 @@ func TestOrganizationDatabaseLifecycle(t *testing.T) {
 	}
 	updated, err := service.SetDatabaseExtensions(
 		ctx, ownerID, organization.Slug, database.Slug,
-		map[string]int{"pg_stat_monitor": 60, "pg_mentat": 300},
+		map[string]DatabaseExtension{
+			"pg_stat_monitor": {IntervalSeconds: 60, IsActive: true},
+			"pg_mentat":       {IntervalSeconds: 300, IsActive: false},
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(updated.Extensions) != 2 || updated.Extensions["pg_mentat"] != 300 || updated.Extensions["pg_stat_monitor"] != 60 {
+	if len(updated.Extensions) != 2 || updated.Extensions["pg_mentat"].IntervalSeconds != 300 || updated.Extensions["pg_mentat"].IsActive || !updated.Extensions["pg_stat_monitor"].IsActive {
 		t.Fatalf("updated extensions = %#v", updated.Extensions)
 	}
 	databases, err := service.ListDatabases(ctx, ownerID, organization.Slug)

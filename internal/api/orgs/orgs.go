@@ -101,10 +101,10 @@ func (h *Handler) updateAnalyticsStore(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) createDatabase(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Name             string         `json:"name"`
-		Slug             string         `json:"slug"`
-		ConnectionString string         `json:"connection_string"`
-		Extensions       map[string]int `json:"extensions"`
+		Name             string                                `json:"name"`
+		Slug             string                                `json:"slug"`
+		ConnectionString string                                `json:"connection_string"`
+		Extensions       map[string]coreorgs.DatabaseExtension `json:"extensions"`
 	}
 	if !decodeJSON(w, r, &input) {
 		return
@@ -133,7 +133,7 @@ func (h *Handler) listDatabases(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) setDatabaseExtensions(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Extensions map[string]int `json:"extensions"`
+		Extensions map[string]coreorgs.DatabaseExtension `json:"extensions"`
 	}
 	if !decodeJSON(w, r, &input) {
 		return
