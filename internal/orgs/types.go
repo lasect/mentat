@@ -2,11 +2,9 @@ package orgs
 
 import (
 	"crypto/cipher"
-	"mentat/internal/appdb"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Organization struct {
@@ -30,12 +28,6 @@ type Database struct {
 type DatabaseExtension struct {
 	IntervalSeconds int  `json:"interval_seconds"`
 	IsActive        bool `json:"is_active"`
-}
-
-type Service struct {
-	pool    *pgxpool.Pool
-	queries *appdb.Queries
-	cipher  *ConnectionCipher
 }
 
 type ConnectionCipher struct {

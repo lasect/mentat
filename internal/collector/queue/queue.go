@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"context"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,6 +29,15 @@ func (q *Queue) Jobs() <-chan CollectionJob {
 	return q.jobs
 }
 
-func (q *Queue) Submit(job CollectionJob) {
-	q.jobs <- job
+func (q *Queue) Submit(ctx context.Context, job CollectionJob) error {
+	select {
+	case q.jobs <- job:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (q *Queue) CloseQueue() {
+	close(q.jobs)
 }
