@@ -53,6 +53,58 @@ func (s *Scheduler) InitializeSchedule(ctx context.Context) error {
 	return nil
 }
 
+func (s *Scheduler) StartScheduler(ctx context.Context) error {
+	heap.Init(&s.schedule)
+
+	for {
+		nextGroup, ok := s.schedule.Peek()
+		if !ok {
+			return fmt.Errorf("heap is empty")
+		}
+
+		if delay := time.Until(nextGroup.NextRunAt); delay > 0 {
+			timer := time.NewTimer(delay)
+
+			select {
+			case <-timer.C:
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			}
+		}
+
+		group := heap.Pop(&s.schedule).(extensionGroup)
+		job := createCollectionJobFromExtensionGroup(group)
+		if err := s.queue.Submit(ctx, job); err != nil {
+			return fmt.Errorf("scheduler: submit job: %w", err)
+		}
+
+		group.NextRunAt = nextRunAt(group, time.Now())
+		heap.Push(&s.schedule, group)
+	}
+}
+
+func createCollectionJobFromExtensionGroup(group extensionGroup) queue.CollectionJob {
+	return queue.CollectionJob{
+		JobID:           uuid.New(),
+		DatabaseID:      group.Key.DatabaseID,
+		Extensions:      group.Extensions,
+		IntervalSeconds: group.Key.IntervalSeconds,
+		ScheduledAt:     group.NextRunAt,
+	}
+}
+
+func nextRunAt(group extensionGroup, now time.Time) time.Time {
+	interval := time.Duration(group.Key.IntervalSeconds) * time.Second
+	next := group.NextRunAt.Add(interval)
+	if next.After(now) {
+		return next
+	}
+
+	missedIntervals := now.Sub(next)/interval + 1
+	return next.Add(missedIntervals * interval)
+}
+
 func groupExtensions(rows []appdb.ListActiveExtensionsForCollectorRow) []extensionGroup {
 	startupTime := time.Now()
 	groups := make([]extensionGroup, 0)

@@ -26,3 +26,10 @@ func (h *scheduleHeap) Pop() any {
 	*h = old[:lastIndex]
 	return group
 }
+
+func (h scheduleHeap) Peek() (extensionGroup, bool) {
+	if len(h) == 0 {
+		return extensionGroup{}, false
+	}
+	return h[0], true
+}
