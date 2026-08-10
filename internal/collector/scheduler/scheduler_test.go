@@ -142,6 +142,66 @@ func TestStartSchedulerCancelsBlockedSubmission(t *testing.T) {
 	}
 }
 
+func TestStartSchedulerRejectsConcurrentStart(t *testing.T) {
+	t.Parallel()
+
+	s := NewScheduler(queue.NewQueue(1), nil)
+	s.schedule = scheduleHeap{{
+		Key:        groupKey{DatabaseID: uuid.New(), IntervalSeconds: 60},
+		Extensions: []string{"pg_stat_statements"},
+		NextRunAt:  time.Now().Add(time.Hour),
+	}}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	firstRun := runScheduler(s, ctx)
+	waitForSchedulerRunning(t, s)
+
+	secondRun := runScheduler(s, ctx)
+	if err := waitForScheduler(t, secondRun); err == nil || err.Error() != "scheduler is already running" {
+		t.Fatalf("second scheduler error = %v, want scheduler is already running", err)
+	}
+
+	cancel()
+	if err := waitForScheduler(t, firstRun); !errors.Is(err, context.Canceled) {
+		t.Fatalf("first scheduler error = %v, want context.Canceled", err)
+	}
+}
+
+func TestStartSchedulerCanRestartAfterStopping(t *testing.T) {
+	t.Parallel()
+
+	s := NewScheduler(queue.NewQueue(1), nil)
+	s.schedule = scheduleHeap{{
+		Key:        groupKey{DatabaseID: uuid.New(), IntervalSeconds: 60},
+		Extensions: []string{"pg_stat_statements"},
+		NextRunAt:  time.Now().Add(time.Hour),
+	}}
+
+	firstCtx, cancelFirst := context.WithCancel(context.Background())
+	firstRun := runScheduler(s, firstCtx)
+	waitForSchedulerRunning(t, s)
+	cancelFirst()
+
+	if err := waitForScheduler(t, firstRun); !errors.Is(err, context.Canceled) {
+		t.Fatalf("first scheduler error = %v, want context.Canceled", err)
+	}
+	if s.running.Load() {
+		t.Fatal("scheduler still marked as running after it stopped")
+	}
+
+	secondCtx, cancelSecond := context.WithCancel(context.Background())
+	defer cancelSecond()
+	secondRun := runScheduler(s, secondCtx)
+	waitForSchedulerRunning(t, s)
+	cancelSecond()
+
+	if err := waitForScheduler(t, secondRun); !errors.Is(err, context.Canceled) {
+		t.Fatalf("second scheduler error = %v, want context.Canceled", err)
+	}
+}
+
 func TestNextRunAt(t *testing.T) {
 	t.Parallel()
 
@@ -205,5 +265,27 @@ func waitForScheduler(t *testing.T, done <-chan error) error {
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for scheduler to stop")
 		return nil
+	}
+}
+
+func waitForSchedulerRunning(t *testing.T, s *Scheduler) {
+	t.Helper()
+
+	deadline := time.NewTimer(time.Second)
+	defer deadline.Stop()
+
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		if s.running.Load() {
+			return
+		}
+
+		select {
+		case <-ticker.C:
+		case <-deadline.C:
+			t.Fatal("timed out waiting for scheduler to start")
+		}
 	}
 }
