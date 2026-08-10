@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"mentat/internal/appdb"
 	"mentat/internal/collector/queue"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,6 +27,7 @@ type Scheduler struct {
 	queries  *appdb.Queries
 	schedule scheduleHeap
 	queue    *queue.Queue
+	running  atomic.Bool
 }
 
 func NewScheduler(queue *queue.Queue, queries *appdb.Queries) *Scheduler {
@@ -55,7 +57,11 @@ func (s *Scheduler) InitializeSchedule(ctx context.Context) error {
 
 func (s *Scheduler) StartScheduler(ctx context.Context) error {
 	heap.Init(&s.schedule)
+	if !s.running.CompareAndSwap(false, true) {
+		return fmt.Errorf("scheduler is already running")
+	}
 
+	defer s.running.Store(false)
 	for {
 		nextGroup, ok := s.schedule.Peek()
 		if !ok {
