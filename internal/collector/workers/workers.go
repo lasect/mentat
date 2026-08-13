@@ -2,6 +2,7 @@ package workers
 
 import (
 	"context"
+	"log/slog"
 	"mentat/internal/collector/queue"
 	"sync"
 	"time"
@@ -48,8 +49,14 @@ func (p *WorkerPool) Run(ctx context.Context) {
 					cancel()
 
 					if err != nil {
-						//return fmt.Errorf("Error processing job:%s, Worker ID: %s, Database ID: %s, JobID: %s ", err, i, job.DatabaseID, job.JobID )
-						return
+						slog.ErrorContext(
+							ctx,
+							"collector job failed",
+							"error", err,
+							"job_id", job.JobID,
+							"database_id", job.DatabaseID,
+						)
+						continue
 					}
 				}
 			}
