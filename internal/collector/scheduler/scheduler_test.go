@@ -3,6 +3,8 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -18,7 +20,7 @@ func TestStartSchedulerRunsEarliestGroupAndReschedulesIt(t *testing.T) {
 	earliestDatabaseID := uuid.New()
 	laterDatabaseID := uuid.New()
 	jobQueue := queue.NewQueue(2)
-	s := NewScheduler(jobQueue, nil)
+	s := newTestScheduler(jobQueue)
 	s.schedule = scheduleHeap{
 		{
 			Key:        groupKey{DatabaseID: laterDatabaseID, IntervalSeconds: 60},
@@ -70,7 +72,7 @@ func TestStartSchedulerWaitsUntilNextRun(t *testing.T) {
 	t.Parallel()
 
 	jobQueue := queue.NewQueue(1)
-	s := NewScheduler(jobQueue, nil)
+	s := newTestScheduler(jobQueue)
 	s.schedule = scheduleHeap{{
 		Key:        groupKey{DatabaseID: uuid.New(), IntervalSeconds: 60},
 		Extensions: []string{"pg_stat_statements"},
@@ -96,7 +98,7 @@ func TestStartSchedulerWaitsUntilNextRun(t *testing.T) {
 func TestStartSchedulerReturnsErrorForEmptySchedule(t *testing.T) {
 	t.Parallel()
 
-	s := NewScheduler(queue.NewQueue(1), nil)
+	s := newTestScheduler(queue.NewQueue(1))
 	err := s.StartScheduler(context.Background())
 	if err == nil || err.Error() != "heap is empty" {
 		t.Fatalf("scheduler error = %v, want heap is empty", err)
@@ -106,7 +108,7 @@ func TestStartSchedulerReturnsErrorForEmptySchedule(t *testing.T) {
 func TestStartSchedulerCancelsWhileWaiting(t *testing.T) {
 	t.Parallel()
 
-	s := NewScheduler(queue.NewQueue(1), nil)
+	s := newTestScheduler(queue.NewQueue(1))
 	s.schedule = scheduleHeap{{
 		Key:        groupKey{DatabaseID: uuid.New(), IntervalSeconds: 60},
 		Extensions: []string{"pg_stat_statements"},
@@ -126,7 +128,7 @@ func TestStartSchedulerCancelsBlockedSubmission(t *testing.T) {
 	t.Parallel()
 
 	jobQueue := queue.NewQueue(0)
-	s := NewScheduler(jobQueue, nil)
+	s := newTestScheduler(jobQueue)
 	s.schedule = scheduleHeap{{
 		Key:        groupKey{DatabaseID: uuid.New(), IntervalSeconds: 60},
 		Extensions: []string{"pg_stat_statements"},
@@ -145,7 +147,7 @@ func TestStartSchedulerCancelsBlockedSubmission(t *testing.T) {
 func TestStartSchedulerRejectsConcurrentStart(t *testing.T) {
 	t.Parallel()
 
-	s := NewScheduler(queue.NewQueue(1), nil)
+	s := newTestScheduler(queue.NewQueue(1))
 	s.schedule = scheduleHeap{{
 		Key:        groupKey{DatabaseID: uuid.New(), IntervalSeconds: 60},
 		Extensions: []string{"pg_stat_statements"},
@@ -172,7 +174,7 @@ func TestStartSchedulerRejectsConcurrentStart(t *testing.T) {
 func TestStartSchedulerCanRestartAfterStopping(t *testing.T) {
 	t.Parallel()
 
-	s := NewScheduler(queue.NewQueue(1), nil)
+	s := newTestScheduler(queue.NewQueue(1))
 	s.schedule = scheduleHeap{{
 		Key:        groupKey{DatabaseID: uuid.New(), IntervalSeconds: 60},
 		Extensions: []string{"pg_stat_statements"},
@@ -244,6 +246,11 @@ func runScheduler(s *Scheduler, ctx context.Context) <-chan error {
 		done <- s.StartScheduler(ctx)
 	}()
 	return done
+}
+
+func newTestScheduler(jobQueue *queue.Queue) *Scheduler {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	return NewScheduler(jobQueue, nil, logger)
 }
 
 func receiveJob(t *testing.T, jobs <-chan queue.CollectionJob) queue.CollectionJob {

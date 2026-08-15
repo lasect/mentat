@@ -1,8 +1,12 @@
 package workers
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -40,7 +44,7 @@ func TestWorkerPoolProcessesEveryJobAndStopsWhenQueueCloses(t *testing.T) {
 		return nil
 	})
 
-	pool := InitializeWorkerPool(3, jobs, processor, time.Second)
+	pool := mustNewWorkerPool(t, 3, jobs, processor, time.Second)
 	waitForWorkerPool(t, runWorkerPool(pool, context.Background()))
 
 	mu.Lock()
@@ -76,7 +80,7 @@ func TestWorkerPoolLimitsConcurrentProcessing(t *testing.T) {
 		return nil
 	})
 
-	pool := InitializeWorkerPool(workerCount, jobs, processor, time.Second)
+	pool := mustNewWorkerPool(t, workerCount, jobs, processor, time.Second)
 	done := runWorkerPool(pool, context.Background())
 
 	for range workerCount {
@@ -115,7 +119,7 @@ func TestWorkerPoolAppliesTimeoutToEachJob(t *testing.T) {
 		return ctx.Err()
 	})
 
-	pool := InitializeWorkerPool(1, jobs, processor, 20*time.Millisecond)
+	pool := mustNewWorkerPool(t, 1, jobs, processor, 20*time.Millisecond)
 	waitForWorkerPool(t, runWorkerPool(pool, context.Background()))
 
 	if err := <-processorError; !errors.Is(err, context.DeadlineExceeded) {
@@ -142,7 +146,7 @@ func TestWorkerPoolContinuesAfterProcessorError(t *testing.T) {
 		return nil
 	})
 
-	pool := InitializeWorkerPool(1, jobs, processor, time.Second)
+	pool := mustNewWorkerPool(t, 1, jobs, processor, time.Second)
 	waitForWorkerPool(t, runWorkerPool(pool, context.Background()))
 
 	if len(processed) != 2 {
@@ -153,12 +157,79 @@ func TestWorkerPoolContinuesAfterProcessorError(t *testing.T) {
 	}
 }
 
+func TestWorkerPoolLogsJobOutcomes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		processErr  error
+		wantLevel   string
+		wantMessage string
+		wantEvent   string
+	}{
+		{
+			name:        "success",
+			wantLevel:   "INFO",
+			wantMessage: "collector job succeeded",
+			wantEvent:   "collector.job.succeeded",
+		},
+		{
+			name:        "failure",
+			processErr:  errors.New("collection failed"),
+			wantLevel:   "ERROR",
+			wantMessage: "collector job failed",
+			wantEvent:   "collector.job.failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var logs bytes.Buffer
+			logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+			job := queue.CollectionJob{
+				JobID:      uuid.New(),
+				DatabaseID: uuid.New(),
+				Extensions: []string{"pg_stat_statements", "pgstattuple"},
+			}
+			jobs := make(chan queue.CollectionJob, 1)
+			jobs <- job
+			close(jobs)
+
+			pool := mustNewWorkerPoolWithLogger(
+				t,
+				1,
+				jobs,
+				processorFunc(func(context.Context, queue.CollectionJob) error { return tt.processErr }),
+				time.Second,
+				logger,
+			)
+			waitForWorkerPool(t, runWorkerPool(pool, context.Background()))
+
+			records := decodeLogRecords(t, logs.Bytes())
+			if len(records) != 2 {
+				t.Fatalf("log record count = %d, want 2", len(records))
+			}
+
+			assertJobLogRecord(t, records[0], job, "DEBUG", "collector job started", "collector.event.started")
+			assertJobLogRecord(t, records[1], job, tt.wantLevel, tt.wantMessage, tt.wantEvent)
+			if _, ok := records[1]["duration_ms"].(float64); !ok {
+				t.Fatalf("duration_ms = %#v, want a number", records[1]["duration_ms"])
+			}
+			if tt.processErr != nil && records[1]["error"] != tt.processErr.Error() {
+				t.Fatalf("error = %#v, want %q", records[1]["error"], tt.processErr)
+			}
+		})
+	}
+}
+
 func TestWorkerPoolStopsWhenContextIsCanceled(t *testing.T) {
 	t.Parallel()
 
 	jobs := make(chan queue.CollectionJob)
 	processorCalled := make(chan struct{}, 1)
-	pool := InitializeWorkerPool(2, jobs, processorFunc(func(context.Context, queue.CollectionJob) error {
+	pool := mustNewWorkerPool(t, 2, jobs, processorFunc(func(context.Context, queue.CollectionJob) error {
 		processorCalled <- struct{}{}
 		return nil
 	}), time.Second)
@@ -172,6 +243,194 @@ func TestWorkerPoolStopsWhenContextIsCanceled(t *testing.T) {
 	case <-processorCalled:
 		t.Fatal("processor called without a submitted job")
 	default:
+	}
+}
+
+func TestNewWorkerPoolRejectsInvalidConfiguration(t *testing.T) {
+	t.Parallel()
+
+	jobs := make(chan queue.CollectionJob)
+	processor := processorFunc(func(context.Context, queue.CollectionJob) error {
+		return nil
+	})
+	logger := discardLogger()
+
+	tests := []struct {
+		name        string
+		workerCount int
+		jobs        <-chan queue.CollectionJob
+		processor   JobProcessor
+		timeout     time.Duration
+		logger      *slog.Logger
+		wantError   string
+	}{
+		{
+			name:        "zero workers",
+			workerCount: 0,
+			jobs:        jobs,
+			processor:   processor,
+			timeout:     time.Second,
+			logger:      logger,
+			wantError:   "Worker count must be greater than zero",
+		},
+		{
+			name:        "negative workers",
+			workerCount: -1,
+			jobs:        jobs,
+			processor:   processor,
+			timeout:     time.Second,
+			logger:      logger,
+			wantError:   "Worker count must be greater than zero",
+		},
+		{
+			name:        "zero timeout",
+			workerCount: 1,
+			jobs:        jobs,
+			processor:   processor,
+			timeout:     0,
+			logger:      logger,
+			wantError:   "Timeout must be greater than zero",
+		},
+		{
+			name:        "negative timeout",
+			workerCount: 1,
+			jobs:        jobs,
+			processor:   processor,
+			timeout:     -time.Second,
+			logger:      logger,
+			wantError:   "Timeout must be greater than zero",
+		},
+		{
+			name:        "nil jobs channel",
+			workerCount: 1,
+			jobs:        nil,
+			processor:   processor,
+			timeout:     time.Second,
+			logger:      logger,
+			wantError:   "Jobs queue or processor can't be empty",
+		},
+		{
+			name:        "nil processor",
+			workerCount: 1,
+			jobs:        jobs,
+			processor:   nil,
+			timeout:     time.Second,
+			logger:      logger,
+			wantError:   "Jobs queue or processor can't be empty",
+		},
+		{
+			name:        "nil logger",
+			workerCount: 1,
+			jobs:        jobs,
+			processor:   processor,
+			timeout:     time.Second,
+			wantError:   "Logger can't be empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pool, err := NewWorkerPool(
+				tt.workerCount,
+				tt.jobs,
+				tt.processor,
+				tt.timeout,
+				tt.logger,
+			)
+			if err == nil {
+				t.Fatal("NewWorkerPool returned nil error")
+			}
+			if err.Error() != tt.wantError {
+				t.Fatalf("NewWorkerPool error = %q, want %q", err, tt.wantError)
+			}
+			if pool != nil {
+				t.Fatalf("NewWorkerPool returned pool %#v for invalid configuration", pool)
+			}
+		})
+	}
+}
+
+func mustNewWorkerPool(
+	t *testing.T,
+	workerCount int,
+	jobs <-chan queue.CollectionJob,
+	processor JobProcessor,
+	timeout time.Duration,
+) *WorkerPool {
+	t.Helper()
+
+	return mustNewWorkerPoolWithLogger(t, workerCount, jobs, processor, timeout, discardLogger())
+}
+
+func mustNewWorkerPoolWithLogger(
+	t *testing.T,
+	workerCount int,
+	jobs <-chan queue.CollectionJob,
+	processor JobProcessor,
+	timeout time.Duration,
+	logger *slog.Logger,
+) *WorkerPool {
+	t.Helper()
+
+	pool, err := NewWorkerPool(workerCount, jobs, processor, timeout, logger)
+	if err != nil {
+		t.Fatalf("NewWorkerPool: %v", err)
+	}
+	return pool
+}
+
+func discardLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+func decodeLogRecords(t *testing.T, data []byte) []map[string]any {
+	t.Helper()
+
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	var records []map[string]any
+	for decoder.More() {
+		var record map[string]any
+		if err := decoder.Decode(&record); err != nil {
+			t.Fatalf("decode log record: %v", err)
+		}
+		records = append(records, record)
+	}
+	return records
+}
+
+func assertJobLogRecord(
+	t *testing.T,
+	record map[string]any,
+	job queue.CollectionJob,
+	wantLevel string,
+	wantMessage string,
+	wantEvent string,
+) {
+	t.Helper()
+
+	wantFields := map[string]any{
+		"level":       wantLevel,
+		"msg":         wantMessage,
+		"component":   "collector.worker",
+		"worker_id":   float64(1),
+		"job_id":      job.JobID.String(),
+		"database_id": job.DatabaseID.String(),
+		"event":       wantEvent,
+	}
+	for field, want := range wantFields {
+		if got := record[field]; got != want {
+			t.Errorf("%s = %#v, want %#v", field, got, want)
+		}
+	}
+
+	extensions, ok := record["extensions"].([]any)
+	if !ok || len(extensions) != len(job.Extensions) {
+		t.Fatalf("extensions = %#v, want %v", record["extensions"], job.Extensions)
+	}
+	for i, want := range job.Extensions {
+		if extensions[i] != want {
+			t.Errorf("extensions[%d] = %#v, want %q", i, extensions[i], want)
+		}
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"context"
 	"fmt"
+	"log/slog"
 	"mentat/internal/appdb"
 	"mentat/internal/collector/queue"
 	"sync/atomic"
@@ -28,13 +29,15 @@ type Scheduler struct {
 	schedule scheduleHeap
 	queue    *queue.Queue
 	running  atomic.Bool
+	logger   *slog.Logger
 }
 
-func NewScheduler(queue *queue.Queue, queries *appdb.Queries) *Scheduler {
+func NewScheduler(queue *queue.Queue, queries *appdb.Queries, logger *slog.Logger) *Scheduler {
 	return &Scheduler{
 		queue:    queue,
 		queries:  queries,
 		schedule: make(scheduleHeap, 0),
+		logger:   logger.With("component", "collector.scheduler"),
 	}
 }
 
