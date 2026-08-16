@@ -40,6 +40,41 @@ func TestPoolManagerGetUnknownDatabase(t *testing.T) {
 	}
 }
 
+func TestPoolManagerGetOrAddReturnsExistingPool(t *testing.T) {
+	t.Parallel()
+
+	manager := NewPoolManager()
+	databaseID := uuid.New()
+	want := newDisconnectedPool(t)
+	manager.pools[databaseID] = want
+
+	got, err := manager.GetOrAdd(context.Background(), databaseID, "://invalid")
+	if err != nil {
+		t.Fatalf("GetOrAdd() existing pool error = %v, want nil", err)
+	}
+	if got != want {
+		t.Fatalf("GetOrAdd() existing pool = %p, want %p", got, want)
+	}
+}
+
+func TestPoolManagerGetOrAddDoesNotStorePoolWhenAddFails(t *testing.T) {
+	t.Parallel()
+
+	manager := NewPoolManager()
+	databaseID := uuid.New()
+
+	pool, err := manager.GetOrAdd(context.Background(), databaseID, "://invalid")
+	if err == nil {
+		t.Fatal("GetOrAdd() error = nil, want an invalid connection string error")
+	}
+	if pool != nil {
+		t.Fatalf("GetOrAdd() pool = %p, want nil", pool)
+	}
+	if cached, getErr := manager.Get(databaseID); getErr == nil || cached != nil {
+		t.Fatalf("Get() after failed GetOrAdd() = %p, %v; want nil pool and an error", cached, getErr)
+	}
+}
+
 func TestPoolManagerGetReleasesReadLock(t *testing.T) {
 	t.Parallel()
 
@@ -151,6 +186,9 @@ func TestPoolManagerDatabaseLifecycle(t *testing.T) {
 	if pool, err := manager.Get(databaseID); err != nil || pool == nil {
 		t.Fatalf("Get() after Add() = %p, %v; want a pool and no error", pool, err)
 	}
+	if pool, err := manager.GetOrAdd(ctx, databaseID, "://invalid"); err != nil || pool == nil {
+		t.Fatalf("GetOrAdd() existing pool = %p, %v; want a pool and no error", pool, err)
+	}
 	if err := manager.Add(ctx, databaseID, databaseURL); err == nil {
 		t.Fatal("duplicate Add() error = nil, want an error")
 	}
@@ -159,6 +197,14 @@ func TestPoolManagerDatabaseLifecycle(t *testing.T) {
 	}
 	if pool, err := manager.Get(databaseID); err == nil || pool != nil {
 		t.Fatalf("Get() after Remove() = %p, %v; want nil pool and an error", pool, err)
+	}
+
+	pool, err := manager.GetOrAdd(ctx, databaseID, databaseURL)
+	if err != nil {
+		t.Fatalf("GetOrAdd() missing pool error = %v, want nil", err)
+	}
+	if pool == nil {
+		t.Fatal("GetOrAdd() missing pool = nil, want a pool")
 	}
 }
 

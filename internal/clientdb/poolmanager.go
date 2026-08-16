@@ -55,6 +55,18 @@ func (m *PoolManager) Get(databaseID uuid.UUID) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
+func (m *PoolManager) GetOrAdd(ctx context.Context, databaseID uuid.UUID, connectionString string) (*pgxpool.Pool, error) {
+	pool, err := m.Get(databaseID)
+	if err == nil {
+		return pool, nil
+	}
+
+	if err := m.Add(ctx, databaseID, connectionString); err != nil {
+		return nil, err
+	}
+
+	return m.Get(databaseID)
+}
 func (m *PoolManager) Remove(databaseID uuid.UUID) error {
 	m.mu.Lock()
 
