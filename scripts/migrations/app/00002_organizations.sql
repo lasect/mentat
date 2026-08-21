@@ -59,9 +59,14 @@ CREATE INDEX databases_org_idx ON databases (organization_id);
 CREATE TABLE database_extensions (
     database_id uuid NOT NULL REFERENCES databases(id) ON DELETE CASCADE,
     extension text NOT NULL,
+    interval_seconds integer NOT NULL DEFAULT 60,
+    last_collected_at timestamptz,
+    next_run_at timestamptz,
+    is_active boolean NOT NULL DEFAULT true,
     selected_by uuid NOT NULL REFERENCES users(id),
     selected_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (database_id, extension),
+    CONSTRAINT database_extensions_interval_range CHECK (interval_seconds BETWEEN 5 AND 86400),
     CONSTRAINT database_extensions_supported CHECK (
         extension IN (
             'pg_stat_statements',
