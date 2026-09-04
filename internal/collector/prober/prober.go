@@ -7,51 +7,11 @@ import (
 	"github.com/google/uuid"
 )
 
-type prober struct {
-	registry *ProberRegistery
-	pool     *clientdb.PoolManager
-	store    *probeStore
-}
-
-type Request struct {
-	DatabaseID   uuid.UUID
-	Capabilities []string
-	Generation   int64
-	Reason       Reason
-	Priority     int
-}
-
-type Readiness string
-
-const (
-	ReadinessUnknown           Readiness = "unknown"
-	ReadinessReady             Readiness = "ready"
-	ReadinessMissingDependency Readiness = "missing_dependency"
-	ReadinessPermissionDenied  Readiness = "permission_denied"
-	ReadinessUnsupported       Readiness = "unsupported"
-	ReadinessUnavailable       Readiness = "unavailable"
-)
-
-type CollectorResult struct {
-	Collector        CollectorName
-	Readiness        Readiness
-	InstalledVersion string
-	ErrorCode        string
-	ErrorMessage     string
-}
-
 type DatabaseStatus string
 
 const (
 	DatabaseReachable   DatabaseStatus = "reachable"
 	DatabaseUnavailable DatabaseStatus = "unavailable"
-)
-
-type Capability string
-
-const (
-	CapabilityQueryStats  Capability = "query_stats"
-	CapabilityBufferCache Capability = "buffer_cache"
 )
 
 type Reason string
@@ -64,19 +24,49 @@ const (
 	ReasonManual        Reason = "manual"
 )
 
-type CapabilityResult struct {
-	Status           string
-	ReasonCode       string
-	ExtensionVersion string
-	Error            string
+type Readiness string
+
+const (
+	ReadinessUnknown           Readiness = "unknown"
+	ReadinessReady             Readiness = "ready"
+	ReadinessMissingDependency Readiness = "missing_dependency"
+	ReadinessPermissionDenied  Readiness = "permission_denied"
+	ReadinessUnsupported       Readiness = "unsupported"
+	ReadinessUnavailable       Readiness = "unavailable"
+)
+
+type prober struct {
+	registry *ProberRegistery
+	pool     *clientdb.PoolManager
+	store    *probeStore
 }
 
-type Snapshot struct {
+type Request struct {
+	DatabaseID     uuid.UUID
+	ExtensionNames []ExtensionName
+	Reason         Reason
+	Priority       int
+}
+
+type ExtensionResult struct {
+	Name         ExtensionName
+	Readiness    Readiness
+	ErrorCode    string
+	ErrorMessage string
+}
+
+type ProberResult struct {
+	DatabaseID  uuid.UUID
+	Extensions  map[ExtensionName]ExtensionResult
+	StartedAt   time.Time
+	CompletedAt time.Time
+}
+
+type ProberExtensionSnapshot struct {
 	ID             uuid.UUID
 	DatabaseID     uuid.UUID
-	ConfigRevision int64
-	DatabaseStatus string
-	Capabilities   map[Capability]CapabilityResult
+	DatabaseStatus DatabaseStatus
+	Extensions     map[ExtensionName]ExtensionResult
 	StartedAt      time.Time
 	CompletedAt    time.Time
 }

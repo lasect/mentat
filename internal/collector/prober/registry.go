@@ -5,29 +5,34 @@ import (
 	"mentat/internal/clientdb"
 )
 
-type CollectorName string
+type ExtensionName string
+
+const (
+	ExtensionPGStatMonitor  ExtensionName = "pg_stat_monitor"
+	ExtensionPGWaitSampling ExtensionName = "pg_wait_sampling"
+	ExtensionPGStatKcache   ExtensionName = "pg_stat_kcache"
+	ExtensionPGQualstats    ExtensionName = "pg_qualstats"
+	ExtensionPGSentinel     ExtensionName = "pgsentinel"
+)
 
 type Querier clientdb.PoolManager
 
-const (
-	CollectorQueryStats     CollectorName = "query_statistics"
-	CollectorActiveSessions CollectorName = "active_sessions"
-	CollectorTableStats     CollectorName = "table_statistics"
-)
-
-type CollectorSpec struct {
-	name                Capability
-	RequiredExtensions  string
-	MinExtensionVersion string
-	MinimumPGVersion    int
-	check               CheckFunc
+type ExtensionSpec struct {
+	name             ExtensionName
+	Name             string
+	MinVersion       string
+	MinimumPGVersion int
+	check            CheckFunc
 }
 
 type ProberRegistery struct {
-	registery map[CollectorName]CollectorSpec
+	registery map[ExtensionName]ExtensionSpec
 }
 
 type CheckFunc func(
 	ctx context.Context,
 	db Querier,
-) CollectorResult
+) CheckResult
+
+type CheckResult struct {
+}
