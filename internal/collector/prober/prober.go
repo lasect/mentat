@@ -1,6 +1,7 @@
 package prober
 
 import (
+	"context"
 	"mentat/internal/clientdb"
 	"time"
 
@@ -36,9 +37,8 @@ const (
 )
 
 type prober struct {
-	registry *ProberRegistery
+	registry *ProberRegistry
 	pool     *clientdb.PoolManager
-	store    *probeStore
 }
 
 type Request struct {
@@ -51,7 +51,6 @@ type Request struct {
 type ExtensionResult struct {
 	Name         ExtensionName
 	Readiness    Readiness
-	ErrorCode    string
 	ErrorMessage string
 }
 
@@ -62,20 +61,13 @@ type ProberResult struct {
 	CompletedAt time.Time
 }
 
-type ProberExtensionSnapshot struct {
-	ID             uuid.UUID
-	DatabaseID     uuid.UUID
-	DatabaseStatus DatabaseStatus
-	Extensions     map[ExtensionName]ExtensionResult
-	StartedAt      time.Time
-	CompletedAt    time.Time
-}
-
-func initializeProbe(registery *ProberRegistery, pool *clientdb.PoolManager) *prober {
+func initializeProbe(registery *ProberRegistry, pool *clientdb.PoolManager) *prober {
 	return &prober{
 		registry: registery,
 		pool:     pool,
 	}
 }
 
-func (p *prober) ProbeNow() {}
+func (p *prober) probeDatabase(ctx context.Context, req Request) {
+
+}
