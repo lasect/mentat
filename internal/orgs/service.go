@@ -28,11 +28,11 @@ type supportedExtensionConfig struct {
 }
 
 var supportedExtensions = map[string]supportedExtensionConfig{
-	"pg_stat_statements": {minInterval: 5, maxInterval: 86400},
-	"pg_stat_monitor":    {minInterval: 5, maxInterval: 86400},
-	"pgstattuple":        {minInterval: 5, maxInterval: 86400},
-	"pg_buffercache":     {minInterval: 5, maxInterval: 86400},
-	"pg_mentat":          {minInterval: 5, maxInterval: 86400},
+	"pg_stat_monitor":  {minInterval: 5, maxInterval: 86400},
+	"pg_wait_sampling": {minInterval: 5, maxInterval: 86400},
+	"pg_stat_kcache":   {minInterval: 5, maxInterval: 86400},
+	"pg_qualstats":     {minInterval: 5, maxInterval: 86400},
+	"pgsentinel":       {minInterval: 5, maxInterval: 86400},
 }
 
 type Service struct {
