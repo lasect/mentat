@@ -17,11 +17,6 @@ type ProberExtensionSnapshot struct {
 	CompletedAt    time.Time
 }
 
-type proberDatabaseSnapshot struct {
-	DatabaseID  uuid.UUID
-	Reason      Reason
-	Readiness   Readiness
-	Extensions  map[ExtensionName]ExtensionResult
-	StartedAt   time.Time
-	CompletedAt time.Time
-}
+// Database snapshots use the same outcome as execution so future persistence
+// retains event correlation, partial results, and probe-level failures.
+type proberDatabaseSnapshot = ProberResult
