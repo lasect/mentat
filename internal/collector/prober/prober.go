@@ -42,6 +42,13 @@ const (
 type prober struct {
 	registry    *ProberRegistry
 	getDatabase func(uuid.UUID) (probeDatabaseClient, error)
+	store       probeStore
+}
+
+type probeStore interface {
+	CreateLog(context.Context, ProbeLog) error
+	SaveDatabaseSnapshot(context.Context, ProberDatabaseSnapshot) error
+	FinishLog(context.Context, uuid.UUID, time.Time) error
 }
 
 type probeDatabaseClient interface {
@@ -66,12 +73,12 @@ type Request struct {
 }
 
 type ExtensionResult struct {
-	Name         ExtensionName
-	Readiness    Readiness
-	ErrorMessage string
+	Name         ExtensionName `json:"name"`
+	Readiness    Readiness     `json:"readiness"`
+	ErrorMessage string        `json:"error_message"`
 	// Checked distinguishes an executed check from an unavailable or unsupported
 	// result produced without executing a check.
-	Checked bool
+	Checked bool `json:"checked"`
 }
 
 type ProberResult struct {
@@ -86,13 +93,77 @@ type ProberResult struct {
 	CompletedAt    time.Time
 }
 
-func initializeProbe(registry *ProberRegistry, pool *clientdb.PoolManager) *prober {
-	return &prober{
+func initializeProbe(registry *ProberRegistry, pool *clientdb.PoolManager, stores ...probeStore) *prober {
+	p := &prober{
 		registry: registry,
 		getDatabase: func(id uuid.UUID) (probeDatabaseClient, error) {
 			return pool.Get(id)
 		},
 	}
+	if len(stores) > 0 {
+		p.store = stores[0]
+	}
+	return p
+}
+
+// initializeProbeWithStore creates the production prober with persistence.
+func initializeProbeWithStore(registry *ProberRegistry, pool *clientdb.PoolManager, store probeStore) *prober {
+	return initializeProbe(registry, pool, store)
+}
+
+// Probe runs all requests as one persisted probe event. Every database result
+// is saved, including incomplete results, before the method returns.
+func (p *prober) Probe(ctx context.Context, requests []Request) ([]ProberResult, error) {
+	if p.store == nil {
+		return nil, fmt.Errorf("probe store is not configured")
+	}
+	if len(requests) == 0 {
+		return nil, fmt.Errorf("at least one probe request is required")
+	}
+	eventID := requests[0].EventID
+	if eventID == uuid.Nil {
+		eventID = uuid.New()
+	}
+	startedAt := time.Now()
+	targets := make([]uuid.UUID, 0, len(requests))
+	seen := make(map[uuid.UUID]struct{}, len(requests))
+	for _, req := range requests {
+		if req.DatabaseID == uuid.Nil {
+			return nil, fmt.Errorf("probe request has an empty database ID")
+		}
+		if req.Reason != requests[0].Reason {
+			return nil, fmt.Errorf("probe requests in one event must have the same reason")
+		}
+		if req.EventID != uuid.Nil && req.EventID != eventID {
+			return nil, fmt.Errorf("probe requests in one event must have the same event ID")
+		}
+		if _, exists := seen[req.DatabaseID]; exists {
+			return nil, fmt.Errorf("database %s appears more than once in probe requests", req.DatabaseID)
+		}
+		seen[req.DatabaseID] = struct{}{}
+		targets = append(targets, req.DatabaseID)
+	}
+	if err := p.store.CreateLog(ctx, ProbeLog{ID: eventID, DatabaseIDs: targets, Reason: requests[0].Reason, StartedAt: startedAt}); err != nil {
+		return nil, fmt.Errorf("create probe log: %w", err)
+	}
+
+	results := make([]ProberResult, 0, len(requests))
+	var probeErr error
+	for _, req := range requests {
+		req.EventID = eventID
+		result, err := p.probeDatabase(ctx, req)
+		results = append(results, result)
+		if saveErr := p.store.SaveDatabaseSnapshot(ctx, result); saveErr != nil {
+			return results, fmt.Errorf("save database %s probe snapshot: %w", req.DatabaseID, saveErr)
+		}
+		if err != nil && probeErr == nil {
+			probeErr = err
+		}
+	}
+	if err := p.store.FinishLog(ctx, eventID, time.Now()); err != nil {
+		return results, fmt.Errorf("finish probe log: %w", err)
+	}
+	return results, probeErr
 }
 
 // probeDatabase returns a persistable outcome even when execution fails. Missing

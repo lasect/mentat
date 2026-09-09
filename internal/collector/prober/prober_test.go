@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -31,6 +32,50 @@ func (db *fakeDatabase) Exec(ctx context.Context, sql string, _ ...any) (pgconn.
 }
 func testProber(db *fakeDatabase) *prober {
 	return &prober{registry: NewProberRegistry(), getDatabase: func(uuid.UUID) (probeDatabaseClient, error) { return db, nil }}
+}
+
+type fakeProbeStore struct {
+	logs      []ProbeLog
+	snapshots []ProberDatabaseSnapshot
+	finished  []uuid.UUID
+}
+
+func (s *fakeProbeStore) CreateLog(_ context.Context, log ProbeLog) error {
+	s.logs = append(s.logs, log)
+	return nil
+}
+func (s *fakeProbeStore) SaveDatabaseSnapshot(_ context.Context, snapshot ProberDatabaseSnapshot) error {
+	s.snapshots = append(s.snapshots, snapshot)
+	return nil
+}
+func (s *fakeProbeStore) FinishLog(_ context.Context, eventID uuid.UUID, _ time.Time) error {
+	s.finished = append(s.finished, eventID)
+	return nil
+}
+
+func TestProbePersistsOneEventAndEveryDatabaseResult(t *testing.T) {
+	db := &fakeDatabase{}
+	store := &fakeProbeStore{}
+	p := testProber(db)
+	p.store = store
+	requests := []Request{
+		{DatabaseID: uuid.New(), Reason: ReasonStartup, ExtensionNames: []ExtensionName{ExtPGStatMonitor}},
+		{DatabaseID: uuid.New(), Reason: ReasonStartup, ExtensionNames: []ExtensionName{ExtPGStatMonitor}},
+	}
+	results, err := p.Probe(context.Background(), requests)
+	if err != nil || len(results) != 2 {
+		t.Fatalf("results = %d, err = %v", len(results), err)
+	}
+	if len(store.logs) != 1 || len(store.logs[0].DatabaseIDs) != 2 {
+		t.Fatalf("logs = %#v", store.logs)
+	}
+	eventID := store.logs[0].ID
+	if results[0].EventID != eventID || results[1].EventID != eventID {
+		t.Fatalf("results have event IDs %#v and %#v, want %s", results[0].EventID, results[1].EventID, eventID)
+	}
+	if len(store.snapshots) != 2 || len(store.finished) != 1 || store.finished[0] != eventID {
+		t.Fatalf("store calls: snapshots=%d finished=%v", len(store.snapshots), store.finished)
+	}
 }
 func assertEnvelope(t *testing.T, got ProberResult, req Request) {
 	t.Helper()

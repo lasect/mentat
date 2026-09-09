@@ -25,12 +25,12 @@ type Database struct {
 type DatabaseExtension struct {
 	DatabaseID      uuid.UUID          `json:"database_id"`
 	Extension       string             `json:"extension"`
-	SelectedBy      uuid.UUID          `json:"selected_by"`
-	SelectedAt      pgtype.Timestamptz `json:"selected_at"`
 	IntervalSeconds int32              `json:"interval_seconds"`
 	LastCollectedAt pgtype.Timestamptz `json:"last_collected_at"`
 	NextRunAt       pgtype.Timestamptz `json:"next_run_at"`
 	IsActive        bool               `json:"is_active"`
+	SelectedBy      uuid.UUID          `json:"selected_by"`
+	SelectedAt      pgtype.Timestamptz `json:"selected_at"`
 }
 
 type OauthIdentity struct {
@@ -67,6 +67,25 @@ type PasswordCredential struct {
 	PasswordHash string             `json:"password_hash"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ProbeDatabaseSnapshot struct {
+	EventID        uuid.UUID          `json:"event_id"`
+	DatabaseID     uuid.UUID          `json:"database_id"`
+	DatabaseStatus string             `json:"database_status"`
+	Status         string             `json:"status"`
+	ErrorMessage   string             `json:"error_message"`
+	Extensions     []byte             `json:"extensions"`
+	StartedAt      pgtype.Timestamptz `json:"started_at"`
+	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
+}
+
+type ProbeLog struct {
+	ID          uuid.UUID          `json:"id"`
+	DatabaseIds []uuid.UUID        `json:"database_ids"`
+	Reason      string             `json:"reason"`
+	StartedAt   pgtype.Timestamptz `json:"started_at"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
 }
 
 type RefreshSession struct {
