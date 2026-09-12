@@ -1,0 +1,22 @@
+name: mentat
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: mentat
+      POSTGRES_PASSWORD: mentat
+      POSTGRES_DB: mentat
+    ports:
+      - "5432:5432"
+    volumes:
+      - mentat-postgres-data:/var/lib/postgresql
+      - ./postgres-init.sql:/docker-entrypoint-initdb.d/postgres-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mentat -d mentat"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+volumes:
+  mentat-postgres-data:

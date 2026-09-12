@@ -2,12 +2,14 @@ package queue
 
 import (
 	"context"
+	"mentat/internal/collector/collection"
 	"time"
 
 	"github.com/google/uuid"
 )
 
 type CollectionJob struct {
+	Plan            *collection.Plan
 	JobID           uuid.UUID
 	DatabaseID      uuid.UUID
 	Extensions      []string
