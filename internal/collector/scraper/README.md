@@ -29,10 +29,15 @@ errors discard the entire result. There are no automatic retries, sequential
 fallbacks, partial deliveries, or collection-state updates. A sink error fails the
 job; the scraper cannot roll back side effects performed by the sink.
 
+Results are limited to 10,000 rows per query and 50,000 rows across the entire job
+(`MaxRowsPerQuery` and `MaxRowsPerJob`). The scraper checks both budgets before
+decoding each row. Exceeding either limit returns `ErrResultLimit`, closes rows and
+the batch, discards the whole job, and skips the sink. Empty queries remain valid
+when the job budget is exactly exhausted. Budgets are local to each scrape.
+
 Queries currently take no runtime arguments. Production SQL, version compatibility,
-filters, data-volume bounds, transformations, and storage are separate work. Results
-are buffered for the complete group, so queries must bound their output before use
-in production.
+filters, transformations, and storage are separate work. Row limits do not bound
+individual value sizes; production queries must also constrain large values.
 
 Validation:
 

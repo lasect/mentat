@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: mentat
       POSTGRES_DB: mentat
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - mentat-postgres-data:/var/lib/postgresql
       - ./postgres-init.sql:/docker-entrypoint-initdb.d/postgres-init.sql:ro

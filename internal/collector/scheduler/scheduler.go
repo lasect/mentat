@@ -39,6 +39,7 @@ type Scheduler struct {
 	logger   *slog.Logger
 }
 
+// NewScheduler creates a scheduler; initialize its schedule before starting it.
 func NewScheduler(queue *queue.Queue, queries extensionSource, builder *collection.Builder, logger *slog.Logger) *Scheduler {
 	return &Scheduler{
 		queue:    queue,
@@ -49,6 +50,8 @@ func NewScheduler(queue *queue.Queue, queries extensionSource, builder *collecti
 	}
 }
 
+// InitializeSchedule builds all plans before atomically replacing the schedule.
+// The owner must serialize initialization with scheduler execution.
 func (s *Scheduler) InitializeSchedule(ctx context.Context) error {
 	// Initialization and StartScheduler must be called sequentially by the owner.
 	if s.running.Load() {
@@ -78,6 +81,7 @@ func (s *Scheduler) InitializeSchedule(ctx context.Context) error {
 	return nil
 }
 
+// StartScheduler submits due jobs until cancellation or a scheduling error.
 func (s *Scheduler) StartScheduler(ctx context.Context) error {
 	if !s.running.CompareAndSwap(false, true) {
 		return fmt.Errorf("scheduler is already running")
@@ -113,6 +117,7 @@ func (s *Scheduler) StartScheduler(ctx context.Context) error {
 	}
 }
 
+// createCollectionJobFromExtensionGroup shares the immutable plan with a new job.
 func createCollectionJobFromExtensionGroup(group extensionGroup) queue.CollectionJob {
 	return queue.CollectionJob{
 		Plan:            group.Plan,
@@ -124,6 +129,7 @@ func createCollectionJobFromExtensionGroup(group extensionGroup) queue.Collectio
 	}
 }
 
+// nextRunAt advances to the first future interval, skipping missed runs.
 func nextRunAt(group extensionGroup, now time.Time) time.Time {
 	interval := time.Duration(group.Key.IntervalSeconds) * time.Second
 	next := group.NextRunAt.Add(interval)
@@ -135,6 +141,7 @@ func nextRunAt(group extensionGroup, now time.Time) time.Time {
 	return next.Add(missedIntervals * interval)
 }
 
+// groupExtensions groups extensions by database and interval using the earliest run time.
 func groupExtensions(rows []appdb.ListActiveExtensionsForCollectorRow) []extensionGroup {
 	startupTime := time.Now()
 	groups := make([]extensionGroup, 0)

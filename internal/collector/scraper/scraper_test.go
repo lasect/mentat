@@ -25,6 +25,7 @@ type fakeRows struct {
 	pgx.Rows
 	values            [][]any
 	next              int
+	decoded           int
 	closed            bool
 	decodeErr, rowErr error
 }
@@ -33,7 +34,7 @@ func (r *fakeRows) FieldDescriptions() []pgconn.FieldDescription {
 	return []pgconn.FieldDescription{{Name: "value", DataTypeOID: 25}}
 }
 func (r *fakeRows) Next() bool             { r.next++; return r.next <= len(r.values) }
-func (r *fakeRows) Values() ([]any, error) { return r.values[r.next-1], r.decodeErr }
+func (r *fakeRows) Values() ([]any, error) { r.decoded++; return r.values[r.next-1], r.decodeErr }
 func (r *fakeRows) Err() error             { return r.rowErr }
 func (r *fakeRows) Close()                 { r.closed = true }
 
@@ -204,4 +205,73 @@ func TestConcurrentPlanReuse(t *testing.T) {
 		})
 	}
 	wg.Wait()
+}
+
+func TestResultRowLimits(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		counts    []int
+		wantLimit bool
+	}{
+		{"query boundary", []int{MaxRowsPerQuery}, false},
+		{"query overflow", []int{MaxRowsPerQuery + 1}, true},
+		{"job boundary with empty query", []int{10000, 10000, 10000, 10000, 10000, 0}, false},
+		{"job overflow", []int{10000, 10000, 10000, 10000, 10000, 1}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			br := &fakeBatch{}
+			sql := make([]string, len(tc.counts))
+			for i, count := range tc.counts {
+				sql[i] = "SELECT 1"
+				values := make([][]any, count)
+				for j := range values {
+					values[j] = []any{int32(1)}
+				}
+				br.rows = append(br.rows, &fakeRows{values: values})
+			}
+			calls := 0
+			s := &ScraperProcess{
+				getDatabase: func(uuid.UUID) (batchSender, error) { return &fakeSender{result: br}, nil },
+				sink: sinkFunc(func(_ context.Context, result CollectionResult) error {
+					calls++
+					if len(result.Results) != len(tc.counts) {
+						t.Fatal("incomplete result delivered")
+					}
+					for i, count := range tc.counts {
+						if len(result.Results[i].Rows) != count {
+							t.Fatal("result truncated")
+						}
+					}
+					return nil
+				}),
+			}
+			job := testJob(t, sql...)
+			result, err := s.Scrape(t.Context(), job)
+			if errors.Is(err, ErrResultLimit) != tc.wantLimit || (!tc.wantLimit && err != nil) {
+				t.Fatalf("unexpected scrape error: %v", err)
+			}
+			if tc.wantLimit && !reflect.DeepEqual(result, CollectionResult{}) {
+				t.Fatal("partial results escaped")
+			}
+			decoded := 0
+			for _, rows := range br.rows {
+				if !rows.closed || rows.decoded > MaxRowsPerQuery {
+					t.Fatal("rows not closed or decoded past query limit")
+				}
+				decoded += rows.decoded
+				rows.next, rows.decoded = 0, 0
+			}
+			if decoded > MaxRowsPerJob || br.closed != 1 {
+				t.Fatal("job budget or cleanup violated")
+			}
+			br.index = 0
+			err = s.Process(t.Context(), job)
+			if errors.Is(err, ErrResultLimit) != tc.wantLimit || (!tc.wantLimit && err != nil) {
+				t.Fatalf("unexpected process error: %v", err)
+			}
+			if (calls == 0) != tc.wantLimit {
+				t.Fatalf("sink calls = %d", calls)
+			}
+		})
+	}
 }

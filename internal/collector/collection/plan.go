@@ -18,6 +18,7 @@ type QuerySpec struct {
 // Plan contains no execution state and may be shared by concurrent jobs.
 type Plan struct{ queries []QuerySpec }
 
+// Len returns the number of queries, or zero for a nil plan.
 func (p *Plan) Len() int {
 	if p == nil {
 		return 0
@@ -47,6 +48,7 @@ func NewBuilder(definitions []QuerySpec) (*Builder, error) {
 	return b, nil
 }
 
+// Build selects registered queries in sorted, deduplicated extension order.
 func (b *Builder) Build(extensionNames []string) (*Plan, error) {
 	if b == nil {
 		return nil, fmt.Errorf("collection builder is not configured")

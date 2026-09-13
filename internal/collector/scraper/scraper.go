@@ -14,6 +14,15 @@ import (
 	"mentat/internal/collector/queue"
 )
 
+// Result limits apply to every scrape, including direct calls to Scrape.
+const (
+	MaxRowsPerQuery = 10_000
+	MaxRowsPerJob   = 50_000
+)
+
+// ErrResultLimit indicates that a query or job exceeded its row budget.
+var ErrResultLimit = errors.New("collection result row limit exceeded")
+
 type Column struct {
 	Name    string
 	TypeOID uint32
@@ -27,7 +36,7 @@ type QueryResult struct {
 }
 
 // CollectionResult owns decoded values, not pgx rows or connection buffers.
-// Results are buffered for a complete job; production SQL must bound data volume.
+// Results are buffered for a complete job within the enforced row limits.
 type CollectionResult struct {
 	JobID       uuid.UUID
 	DatabaseID  uuid.UUID
@@ -52,6 +61,7 @@ type ScraperProcess struct {
 	sink        ResultSink
 }
 
+// NewScraper creates a processor that delivers complete results to sink.
 func NewScraper(pool *clientdb.PoolManager, sink ResultSink) (*ScraperProcess, error) {
 	if pool == nil || sink == nil {
 		return nil, fmt.Errorf("scraper requires pool manager and result sink")
@@ -62,6 +72,7 @@ func NewScraper(pool *clientdb.PoolManager, sink ResultSink) (*ScraperProcess, e
 	}, nil
 }
 
+// Process scrapes a job and delivers it once, only if collection succeeds.
 func (s *ScraperProcess) Process(ctx context.Context, job queue.CollectionJob) error {
 	if s == nil || s.sink == nil {
 		return fmt.Errorf("scraper result sink is not configured")
@@ -114,13 +125,14 @@ func (s *ScraperProcess) Scrape(ctx context.Context, job queue.CollectionJob) (r
 			result.CompletedAt = time.Now()
 		}
 	}()
+	remainingRows := MaxRowsPerJob
 	for i := 0; i < job.Plan.Len(); i++ {
 		query := job.Plan.Query(i)
 		rows, queryErr := results.Query()
 		if queryErr != nil {
 			return CollectionResult{}, fmt.Errorf("collect %s/%s: %w", query.Extension, query.ResultKey, queryErr)
 		}
-		collected, readErr := readRows(rows)
+		collected, readErr := readRows(rows, &remainingRows)
 		if readErr != nil {
 			return CollectionResult{}, fmt.Errorf("decode %s/%s: %w", query.Extension, query.ResultKey, readErr)
 		}
@@ -130,13 +142,21 @@ func (s *ScraperProcess) Scrape(ctx context.Context, job queue.CollectionJob) (r
 	return result, nil
 }
 
-func readRows(rows pgx.Rows) (QueryResult, error) {
+// readRows owns decoded rows and consumes the job budget before decoding each row.
+func readRows(rows pgx.Rows, remainingRows *int) (QueryResult, error) {
 	defer rows.Close()
 	result := QueryResult{Rows: make([][]any, 0)}
 	for _, field := range rows.FieldDescriptions() {
 		result.Columns = append(result.Columns, Column{Name: field.Name, TypeOID: field.DataTypeOID})
 	}
 	for rows.Next() {
+		if len(result.Rows) >= MaxRowsPerQuery {
+			return QueryResult{}, fmt.Errorf("%w: query maximum is %d", ErrResultLimit, MaxRowsPerQuery)
+		}
+		if *remainingRows == 0 {
+			return QueryResult{}, fmt.Errorf("%w: job maximum is %d", ErrResultLimit, MaxRowsPerJob)
+		}
+		*remainingRows--
 		// Values decodes into owned Go values with pgx's standard codecs. Do not use
 		// RawValues, whose buffers are only valid until the next Next call.
 		values, err := rows.Values()
