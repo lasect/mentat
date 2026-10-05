@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"mentat/internal/appdb"
+	"mentat/internal/collector/collection"
 	"mentat/internal/collector/queue"
 	"sync/atomic"
 	"time"
@@ -14,6 +15,7 @@ import (
 )
 
 type extensionGroup struct {
+	Plan       *collection.Plan
 	Key        groupKey
 	Extensions []string
 	NextRunAt  time.Time
@@ -24,47 +26,69 @@ type groupKey struct {
 	IntervalSeconds int32
 }
 
+type extensionSource interface {
+	ListActiveExtensionsForCollector(context.Context) ([]appdb.ListActiveExtensionsForCollectorRow, error)
+}
+
 type Scheduler struct {
-	queries  *appdb.Queries
+	queries  extensionSource
+	builder  *collection.Builder
 	schedule scheduleHeap
 	queue    *queue.Queue
 	running  atomic.Bool
 	logger   *slog.Logger
 }
 
-func NewScheduler(queue *queue.Queue, queries *appdb.Queries, logger *slog.Logger) *Scheduler {
+// NewScheduler creates a scheduler; initialize its schedule before starting it.
+func NewScheduler(queue *queue.Queue, queries extensionSource, builder *collection.Builder, logger *slog.Logger) *Scheduler {
 	return &Scheduler{
 		queue:    queue,
 		queries:  queries,
+		builder:  builder,
 		schedule: make(scheduleHeap, 0),
 		logger:   logger.With("component", "collector.scheduler"),
 	}
 }
 
+// InitializeSchedule builds all plans before atomically replacing the schedule.
+// The owner must serialize initialization with scheduler execution.
 func (s *Scheduler) InitializeSchedule(ctx context.Context) error {
+	// Initialization and StartScheduler must be called sequentially by the owner.
+	if s.running.Load() {
+		return fmt.Errorf("cannot initialize a running scheduler")
+	}
+	if s.queries == nil || s.builder == nil {
+		return fmt.Errorf("scheduler requires extension source and collection builder")
+	}
 	row, err := s.queries.ListActiveExtensionsForCollector(ctx)
 	if err != nil {
 		return fmt.Errorf("list active extensions: %w", err)
 	}
 
 	groups := groupExtensions(row)
-	s.schedule = make(scheduleHeap, 0, len(groups))
+	schedule := make(scheduleHeap, 0, len(groups))
 
 	for _, group := range groups {
-		heap.Push(&s.schedule, group)
+		group.Plan, err = s.builder.Build(group.Extensions)
+		if err != nil {
+			return fmt.Errorf("build collection plan for database %s interval %d: %w", group.Key.DatabaseID, group.Key.IntervalSeconds, err)
+		}
+		schedule = append(schedule, group)
 	}
-	heap.Init(&s.schedule)
+	heap.Init(&schedule)
+	s.schedule = schedule
 
 	return nil
 }
 
+// StartScheduler submits due jobs until cancellation or a scheduling error.
 func (s *Scheduler) StartScheduler(ctx context.Context) error {
-	heap.Init(&s.schedule)
 	if !s.running.CompareAndSwap(false, true) {
 		return fmt.Errorf("scheduler is already running")
 	}
 
 	defer s.running.Store(false)
+	heap.Init(&s.schedule)
 	for {
 		nextGroup, ok := s.schedule.Peek()
 		if !ok {
@@ -93,8 +117,10 @@ func (s *Scheduler) StartScheduler(ctx context.Context) error {
 	}
 }
 
+// createCollectionJobFromExtensionGroup shares the immutable plan with a new job.
 func createCollectionJobFromExtensionGroup(group extensionGroup) queue.CollectionJob {
 	return queue.CollectionJob{
+		Plan:            group.Plan,
 		JobID:           uuid.New(),
 		DatabaseID:      group.Key.DatabaseID,
 		Extensions:      group.Extensions,
@@ -103,6 +129,7 @@ func createCollectionJobFromExtensionGroup(group extensionGroup) queue.Collectio
 	}
 }
 
+// nextRunAt advances to the first future interval, skipping missed runs.
 func nextRunAt(group extensionGroup, now time.Time) time.Time {
 	interval := time.Duration(group.Key.IntervalSeconds) * time.Second
 	next := group.NextRunAt.Add(interval)
@@ -114,6 +141,7 @@ func nextRunAt(group extensionGroup, now time.Time) time.Time {
 	return next.Add(missedIntervals * interval)
 }
 
+// groupExtensions groups extensions by database and interval using the earliest run time.
 func groupExtensions(rows []appdb.ListActiveExtensionsForCollectorRow) []extensionGroup {
 	startupTime := time.Now()
 	groups := make([]extensionGroup, 0)

@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"mentat/internal/appdb"
+	"mentat/internal/collector/collection"
 	"mentat/internal/collector/queue"
 
 	"github.com/google/uuid"
@@ -21,6 +23,8 @@ func TestStartSchedulerRunsEarliestGroupAndReschedulesIt(t *testing.T) {
 	laterDatabaseID := uuid.New()
 	jobQueue := queue.NewQueue(2)
 	s := newTestScheduler(jobQueue)
+	builder, _ := collection.NewBuilder([]collection.QuerySpec{{Extension: "fixture", ResultKey: "rows", SQL: "SELECT 1"}})
+	plan, _ := builder.Build([]string{"fixture"})
 	s.schedule = scheduleHeap{
 		{
 			Key:        groupKey{DatabaseID: laterDatabaseID, IntervalSeconds: 60},
@@ -28,6 +32,7 @@ func TestStartSchedulerRunsEarliestGroupAndReschedulesIt(t *testing.T) {
 			NextRunAt:  now.Add(time.Hour),
 		},
 		{
+			Plan:       plan,
 			Key:        groupKey{DatabaseID: earliestDatabaseID, IntervalSeconds: 1},
 			Extensions: []string{"pg_stat_statements", "pg_stat_monitor"},
 			NextRunAt:  now.Add(-100 * time.Millisecond),
@@ -55,6 +60,9 @@ func TestStartSchedulerRunsEarliestGroupAndReschedulesIt(t *testing.T) {
 	}
 
 	recurringJob := receiveJob(t, jobQueue.Jobs())
+	if job.Plan != plan || recurringJob.Plan != plan {
+		t.Fatal("recurring jobs must reuse the group plan")
+	}
 	if recurringJob.DatabaseID != earliestDatabaseID {
 		t.Fatalf("recurring database ID = %s, want %s", recurringJob.DatabaseID, earliestDatabaseID)
 	}
@@ -250,7 +258,7 @@ func runScheduler(s *Scheduler, ctx context.Context) <-chan error {
 
 func newTestScheduler(jobQueue *queue.Queue) *Scheduler {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewScheduler(jobQueue, nil, logger)
+	return NewScheduler(jobQueue, nil, nil, logger)
 }
 
 func receiveJob(t *testing.T, jobs <-chan queue.CollectionJob) queue.CollectionJob {
@@ -294,5 +302,48 @@ func waitForSchedulerRunning(t *testing.T, s *Scheduler) {
 		case <-deadline.C:
 			t.Fatal("timed out waiting for scheduler to start")
 		}
+	}
+}
+
+type fakeExtensionSource struct {
+	rows []appdb.ListActiveExtensionsForCollectorRow
+	err  error
+}
+
+func (f *fakeExtensionSource) ListActiveExtensionsForCollector(context.Context) ([]appdb.ListActiveExtensionsForCollectorRow, error) {
+	return f.rows, f.err
+}
+
+func TestInitializePlansAtomically(t *testing.T) {
+	builder, _ := collection.NewBuilder([]collection.QuerySpec{{Extension: "fixture", ResultKey: "rows", SQL: "SELECT 1"}})
+	source := &fakeExtensionSource{rows: []appdb.ListActiveExtensionsForCollectorRow{{DatabaseID: uuid.New(), Extension: "fixture", IntervalSeconds: 10}}}
+	s := newTestScheduler(queue.NewQueue(1))
+	s.queries = source
+	s.builder = builder
+	if err := s.InitializeSchedule(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	previous := s.schedule[0].Plan
+	if previous.Len() != 1 {
+		t.Fatal("missing plan")
+	}
+	source.rows = append(source.rows, appdb.ListActiveExtensionsForCollectorRow{DatabaseID: uuid.New(), Extension: "unsupported", IntervalSeconds: 30})
+	if err := s.InitializeSchedule(t.Context()); err == nil {
+		t.Fatal("accepted unsupported extension")
+	}
+	if len(s.schedule) != 1 || s.schedule[0].Plan != previous {
+		t.Fatal("failed build changed schedule")
+	}
+	source.err = errors.New("source failed")
+	if err := s.InitializeSchedule(t.Context()); !errors.Is(err, source.err) || s.schedule[0].Plan != previous {
+		t.Fatal("source failure changed schedule")
+	}
+	source.err = nil
+	source.rows = source.rows[:1]
+	if err := s.InitializeSchedule(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if s.schedule[0].Plan == previous || previous.Query(0).SQL != "SELECT 1" {
+		t.Fatal("replacement mutated or reused old plan")
 	}
 }
